@@ -1,0 +1,3 @@
+- [ ] Implement deterministic graph and plasticity engines with automated mathematical tests.
+- [ ] Build the interactive simulator interface with graph rendering, charts, and working controls.
+- [ ] Verify the baseline and trauma flows, run tests, and confirm the production build.
