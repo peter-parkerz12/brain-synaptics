@@ -48,12 +48,12 @@ export function GraphCanvas({ graph, source, target, path = [], selected, onSele
         wheelSensitivity: 0.18,
         boxSelectionEnabled: false,
         style: [
-          { selector: "node", style: { "background-color": token("--panel-raised"), "border-color": token("--muted"), "border-width": 2, label: "data(label)", color: token("--foreground"), "font-family": "JetBrains Mono, monospace", "font-size": 15, "font-weight": 700, width: 48, height: 48, "text-valign": "center", "text-halign": "center", "overlay-opacity": 0 } },
+          { selector: "node", style: { "background-color": token("--panel-raised"), "border-color": token("--muted"), "border-width": 2, label: "data(label)", color: token("--foreground"), "font-family": "system-ui, sans-serif", "font-size": 15, "font-weight": 700, width: 48, height: 48, "text-valign": "center", "text-halign": "center", "overlay-opacity": 0 } },
           { selector: "node.source", style: { "border-color": token("--primary"), "border-width": 3 } },
           { selector: "node.target", style: { "border-color": token("--primary"), "border-width": 3, "background-color": token("--primary-dim") } },
           { selector: "node.damaged", style: { "border-color": token("--damage"), "border-width": 3, "background-color": token("--damage-dim") } },
           { selector: "node.selected", style: { "border-color": token("--warning"), "border-width": 4 } },
-          { selector: "edge", style: { width: 2, "line-color": token("--muted-line"), "curve-style": "straight", label: "data(label)", color: token("--muted-foreground"), "font-family": "JetBrains Mono, monospace", "font-size": 10, "text-background-color": token("--background"), "text-background-opacity": 1, "text-background-padding": 2, "overlay-opacity": 0 } },
+          { selector: "edge", style: { width: 2, "line-color": token("--muted-line"), "curve-style": "straight", label: "data(label)", color: token("--muted-foreground"), "font-family": "system-ui, sans-serif", "font-size": 10, "text-background-color": token("--background"), "text-background-opacity": 1, "text-background-padding": 2, "overlay-opacity": 0 } },
           { selector: "edge.weak", style: { width: 1 } },
           { selector: "edge.strengthened", style: { width: 3, "line-color": token("--secondary-green"), color: token("--secondary-green") } },
           { selector: "edge.route", style: { width: 4, "line-color": token("--primary"), color: token("--primary") } },
@@ -74,11 +74,11 @@ function resolveCssColor(value) {
   const rgb = value.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
   if (rgb) return `rgb(${rgb[1]}, ${rgb[2]}, ${rgb[3]})`;
 
-  const oklch = value.match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)/i);
+  const oklch = value.match(/oklch\(\s*([\d.]+%?)\s+([\d.]+%?)\s+([\d.]+)/i);
   if (!oklch) return value;
 
-  const lightness = Number(oklch[1]);
-  const chroma = Number(oklch[2]);
+  const lightness = Number.parseFloat(oklch[1]) / (oklch[1].endsWith("%") ? 100 : 1);
+  const chroma = Number.parseFloat(oklch[2]) * (oklch[2].endsWith("%") ? 0.004 : 1);
   const hue = Number(oklch[3]) * Math.PI / 180;
   const a = chroma * Math.cos(hue);
   const b = chroma * Math.sin(hue);

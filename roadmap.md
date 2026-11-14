@@ -1,3 +1,3 @@
-- [ ] Implement deterministic graph and plasticity engines with automated mathematical tests.
-- [ ] Build the interactive simulator interface with graph rendering, charts, and working controls.
-- [ ] Verify the baseline and trauma flows, run tests, and confirm the production build.
+- [ ] Fix the non-working simulation flow and any runtime graph-rendering failures.
+- [ ] Simplify the simulator interface for a cleaner, more approachable professional workflow.
+- [ ] Run graph tests and verify the simulation in the preview; confirm the build is clean.

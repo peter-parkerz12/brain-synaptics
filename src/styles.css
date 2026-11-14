@@ -143,48 +143,48 @@
   --sidebar-ring: oklch(0.551 0.027 264.364);
 }
 
-:root, .dark {
-  color-scheme: dark;
-  --background: oklch(0.145 0.018 145);
-  --foreground: oklch(0.91 0.035 145);
-  --card: oklch(0.19 0.025 145);
-  --card-foreground: oklch(0.91 0.035 145);
-  --popover: oklch(0.19 0.025 145);
-  --popover-foreground: oklch(0.91 0.035 145);
-  --primary: oklch(0.88 0.24 145);
-  --primary-foreground: oklch(0.15 0.02 145);
-  --secondary: oklch(0.26 0.055 145);
-  --secondary-foreground: oklch(0.84 0.11 145);
-  --muted: oklch(0.22 0.03 145);
-  --muted-foreground: oklch(0.7 0.07 145);
-  --accent: oklch(0.29 0.06 145);
-  --accent-foreground: oklch(0.92 0.04 145);
-  --destructive: oklch(0.63 0.19 25);
-  --destructive-foreground: oklch(0.96 0.02 145);
-  --border: oklch(0.32 0.045 145);
-  --input: oklch(0.32 0.045 145);
-  --ring: oklch(0.78 0.18 145);
-  --chart-1: oklch(0.84 0.22 145);
-  --chart-2: oklch(0.72 0.16 150);
-  --chart-3: oklch(0.76 0.15 95);
-  --chart-4: oklch(0.67 0.17 25);
-  --chart-5: oklch(0.65 0.08 185);
-  --sidebar: oklch(0.17 0.022 145);
-  --sidebar-foreground: oklch(0.91 0.035 145);
-  --sidebar-primary: oklch(0.88 0.24 145);
-  --sidebar-primary-foreground: oklch(0.15 0.02 145);
-  --sidebar-accent: oklch(0.29 0.06 145);
-  --sidebar-accent-foreground: oklch(0.92 0.04 145);
-  --sidebar-border: oklch(0.32 0.045 145);
-  --sidebar-ring: oklch(0.78 0.18 145);
-  --panel-raised: oklch(0.22 0.03 145);
-  --primary-dim: oklch(0.29 0.09 145);
-  --secondary-green: oklch(0.68 0.17 145);
-  --muted-line: oklch(0.43 0.07 145);
-  --damage: oklch(0.67 0.19 25);
-  --damage-dim: oklch(0.27 0.08 25);
-  --warning: oklch(0.79 0.13 88);
-  --grid: oklch(0.3 0.035 145 / 40%);
+:root {
+  color-scheme: light;
+  --background: oklch(0.98 0.006 240);
+  --foreground: oklch(0.24 0.025 250);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.24 0.025 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.24 0.025 250);
+  --primary: oklch(0.53 0.12 165);
+  --primary-foreground: oklch(0.99 0.004 165);
+  --secondary: oklch(0.94 0.012 240);
+  --secondary-foreground: oklch(0.34 0.025 250);
+  --muted: oklch(0.95 0.009 240);
+  --muted-foreground: oklch(0.52 0.022 250);
+  --accent: oklch(0.92 0.035 165);
+  --accent-foreground: oklch(0.31 0.07 165);
+  --destructive: oklch(0.58 0.19 25);
+  --destructive-foreground: oklch(0.99 0.004 25);
+  --border: oklch(0.88 0.012 240);
+  --input: oklch(0.88 0.012 240);
+  --ring: oklch(0.62 0.11 165);
+  --chart-1: oklch(0.53 0.12 165);
+  --chart-2: oklch(0.58 0.13 245);
+  --chart-3: oklch(0.68 0.14 75);
+  --chart-4: oklch(0.59 0.17 25);
+  --chart-5: oklch(0.58 0.1 305);
+  --sidebar: oklch(0.97 0.008 240);
+  --sidebar-foreground: oklch(0.24 0.025 250);
+  --sidebar-primary: oklch(0.53 0.12 165);
+  --sidebar-primary-foreground: oklch(0.99 0.004 165);
+  --sidebar-accent: oklch(0.92 0.035 165);
+  --sidebar-accent-foreground: oklch(0.31 0.07 165);
+  --sidebar-border: oklch(0.88 0.012 240);
+  --sidebar-ring: oklch(0.62 0.11 165);
+  --panel-raised: oklch(0.97 0.008 240);
+  --primary-dim: oklch(0.9 0.045 165);
+  --secondary-green: oklch(0.48 0.1 165);
+  --muted-line: oklch(0.73 0.018 240);
+  --damage: oklch(0.59 0.17 25);
+  --damage-dim: oklch(0.93 0.035 25);
+  --warning: oklch(0.62 0.13 75);
+  --grid: oklch(0.88 0.012 240 / 40%);
 }
 
 @layer base {
@@ -195,22 +195,22 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
-    font-size: 12px;
+    font-family: "Inter", "Segoe UI", sans-serif;
+    font-size: 13px;
     min-width: 320px;
     margin: 0;
   }
 }
 
 @layer components {
-  .app-shell { min-height: 100vh; padding: 0 26px 18px; background-color: var(--background); background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 34px 34px; }
+  .app-shell { min-height: 100vh; padding: 0 26px 18px; background-color: var(--background); }
   .topbar { min-height: 82px; display: flex; align-items: center; justify-content: space-between; gap: 22px; border-bottom: 1px solid var(--border); background: var(--background); }
   .brand-lockup, .top-actions, .brand-mark, .status-indicator, .workspace-heading, .workspace-heading-right, .section-title, .range-row, .iteration-label, .iteration-buttons, .graph-frame-header, .graph-legend, .inspection-title, .reachability, .performance-row, .event-heading, .bottom-heading, .history-count, .app-footer { display: flex; align-items: center; }
   .brand-lockup { gap: 13px; min-width: 0; }
   .brand-mark { width: 38px; height: 38px; justify-content: center; border: 1px solid var(--primary); color: var(--primary); }
-  .brand-lockup h1 { margin: 0; font-size: 16px; font-weight: 700; line-height: 1.5; color: var(--foreground); }
+  .brand-lockup h1 { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.5; color: var(--foreground); }
   .brand-lockup h1 span { color: var(--primary); }
-  .brand-lockup p, .eyebrow, .model-equation, .model-revision, .section-title h3, .section-index, .field > span, .range-row label, .iteration-label, .data-label, .inspection-title, .inspector-value > span, .metric-cell > span, .compact-metrics span, .event-heading, .history-count, .record-footnote, .app-footer, .performance-caveat, .result-label { color: var(--muted-foreground); font-size: 9px; font-weight: 600; letter-spacing: 0; }
+  .brand-lockup p, .eyebrow, .model-equation, .model-revision, .section-title h3, .section-index, .field > span, .range-row label, .iteration-label, .data-label, .inspection-title, .inspector-value > span, .metric-cell > span, .compact-metrics span, .event-heading, .history-count, .record-footnote, .app-footer, .performance-caveat, .result-label { color: var(--muted-foreground); font-size: 10px; font-weight: 600; letter-spacing: 0; }
   .brand-lockup p { margin: 3px 0 0; }
   .header-separator, .app-footer i, .graph-frame-header i, .history-count i { color: var(--primary); padding: 0 6px; font-style: normal; }
   .top-actions { justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
@@ -218,7 +218,7 @@
   .status-dot, .reach-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-foreground); }
   .status-dot.running { background: var(--primary); box-shadow: 0 0 8px var(--primary); }
   .state-chip { color: var(--primary); border: 1px solid var(--border); padding: 7px 9px; font-size: 9px; }
-  .topbar .border, .topbar button, .button-stack button, .algorithm-buttons button, .iteration-buttons button { border-radius: 2px; font-family: inherit; font-size: 10px; }
+  .topbar .border, .topbar button, .button-stack button, .algorithm-buttons button, .iteration-buttons button { border-radius: 5px; font-family: inherit; font-size: 12px; }
   .workspace-layout { display: grid; grid-template-columns: minmax(220px, 265px) minmax(380px, 1fr) minmax(250px, 305px); gap: 22px; align-items: start; padding-top: 20px; }
   .left-rail, .right-rail { min-width: 0; }
   .control-section, .results-section { padding: 0 0 17px; margin: 0 0 16px; border-bottom: 1px solid var(--border); }
@@ -260,7 +260,7 @@
   .graph-frame-header { justify-content: space-between; min-height: 34px; padding: 0 12px; border-bottom: 1px solid var(--border); color: var(--secondary-foreground); font-size: 9px; }
   .graph-frame-header i { display: inline-block; width: 4px; height: 4px; padding: 0; border-radius: 50%; background: var(--primary); }
   .graph-scroll { overflow: auto; }
-  .graph-canvas { width: 100%; height: 360px; min-width: 480px; background-image: radial-gradient(var(--grid) 1px, transparent 1px); background-size: 18px 18px; }
+  .graph-canvas { width: 100%; height: 360px; min-width: 480px; background: var(--card); }
   .graph-legend { justify-content: center; gap: 14px; flex-wrap: wrap; padding: 10px 8px; border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: 8px; }
   .graph-legend span { display: inline-flex; align-items: center; gap: 5px; }
   .legend-node { width: 9px; height: 9px; border: 1px solid var(--primary); border-radius: 50%; }
@@ -328,7 +328,7 @@
   .chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
   .chart-block { min-width: 0; }
   .micro-heading { margin: 0 0 7px; color: var(--muted-foreground); font-size: 8px; font-weight: 500; }
-  .chart-wrap { position: relative; height: 190px; min-width: 0; padding: 9px; border: 1px solid var(--border); background: var(--card); }
+  .chart-wrap { position: relative; height: 190px; min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); }
   .event-panel { min-width: 0; border-left: 1px solid var(--border); padding-left: 16px; }
   .event-heading { justify-content: space-between; color: var(--foreground); }
   .event-heading button { width: 28px; height: 28px; border-radius: 2px; }
