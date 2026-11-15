@@ -5,6 +5,18 @@ export const BASE_NODES = Object.freeze([
   { id: "D", name: "Alternative Region 1", role: "Intermediate", activation: 0.35, capacity: 1 },
   { id: "E", name: "Downstream Region", role: "Intermediate", activation: 0.7, capacity: 1 },
   { id: "F", name: "Target Function", role: "Target", activation: 0.9, capacity: 1 },
+  { id: "G", name: "Relay Region 1", role: "Intermediate", activation: 0.32, capacity: 1 },
+  { id: "H", name: "Relay Region 2", role: "Intermediate", activation: 0.38, capacity: 1 },
+  { id: "I", name: "Alternative Relay 1", role: "Intermediate", activation: 0.28, capacity: 1 },
+  { id: "J", name: "Alternative Relay 2", role: "Intermediate", activation: 0.42, capacity: 1 },
+  { id: "K", name: "Secondary Relay 1", role: "Intermediate", activation: 0.34, capacity: 1 },
+  { id: "L", name: "Secondary Relay 2", role: "Intermediate", activation: 0.30, capacity: 1 },
+  { id: "M", name: "Peripheral Relay 1", role: "Intermediate", activation: 0.25, capacity: 1 },
+  { id: "N", name: "Peripheral Relay 2", role: "Intermediate", activation: 0.39, capacity: 1 },
+  { id: "O", name: "Downstream Relay 1", role: "Intermediate", activation: 0.33, capacity: 1 },
+  { id: "P", name: "Downstream Relay 2", role: "Intermediate", activation: 0.27, capacity: 1 },
+  { id: "Q", name: "Crosslink Relay 1", role: "Intermediate", activation: 0.36, capacity: 1 },
+  { id: "R", name: "Crosslink Relay 2", role: "Intermediate", activation: 0.31, capacity: 1 },
 ]);
 
 export const BASE_EDGES = Object.freeze([
@@ -15,6 +27,24 @@ export const BASE_EDGES = Object.freeze([
   { id: "C-E", source: "C", target: "E", initialWeight: 0.8 },
   { id: "D-E", source: "D", target: "E", initialWeight: 0.35 },
   { id: "E-F", source: "E", target: "F", initialWeight: 0.9 },
+  { id: "B-G", source: "B", target: "G", initialWeight: 0.34 },
+  { id: "G-H", source: "G", target: "H", initialWeight: 0.28 },
+  { id: "H-C", source: "H", target: "C", initialWeight: 0.32 },
+  { id: "D-I", source: "D", target: "I", initialWeight: 0.30 },
+  { id: "I-J", source: "I", target: "J", initialWeight: 0.28 },
+  { id: "J-E", source: "J", target: "E", initialWeight: 0.30 },
+  { id: "C-K", source: "C", target: "K", initialWeight: 0.32 },
+  { id: "K-L", source: "K", target: "L", initialWeight: 0.28 },
+  { id: "L-E", source: "L", target: "E", initialWeight: 0.32 },
+  { id: "A-M", source: "A", target: "M", initialWeight: 0.30 },
+  { id: "M-N", source: "M", target: "N", initialWeight: 0.26 },
+  { id: "N-D", source: "N", target: "D", initialWeight: 0.30 },
+  { id: "E-O", source: "E", target: "O", initialWeight: 0.30 },
+  { id: "O-P", source: "O", target: "P", initialWeight: 0.28 },
+  { id: "P-F", source: "P", target: "F", initialWeight: 0.30 },
+  { id: "B-Q", source: "B", target: "Q", initialWeight: 0.32 },
+  { id: "Q-R", source: "Q", target: "R", initialWeight: 0.28 },
+  { id: "R-D", source: "R", target: "D", initialWeight: 0.32 },
 ]);
 
 export class WeightedGraph {

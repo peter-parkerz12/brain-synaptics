@@ -21,7 +21,7 @@ export function Simulator() {
   const [source, setSource] = useState("A");
   const [target, setTarget] = useState("F");
   const [damageType, setDamageType] = useState("edge");
-  const [severity, setSeverity] = useState(100);
+  const [severity, setSeverity] = useState(40);
   const [learningRate, setLearningRate] = useState(0.1);
   const [decayRate, setDecayRate] = useState(0);
   const [iteration, setIteration] = useState(0);
@@ -29,7 +29,7 @@ export function Simulator() {
   const [activePath, setActivePath] = useState([]);
   const [algorithm, setAlgorithm] = useState(null);
   const [history, setHistory] = useState(initialHistory);
-  const [events, setEvents] = useState([{ id: 0, title: "S0 · BASELINE NETWORK LOADED", detail: "6 nodes · 7 weighted connections", tone: "normal" }]);
+  const [events, setEvents] = useState([{ id: 0, title: "S0 · BASELINE NETWORK LOADED", detail: "18 nodes · 25 weighted connections", tone: "normal" }]);
   const [undoStack, setUndoStack] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -201,7 +201,7 @@ export function Simulator() {
 
         <section className="graph-workspace">
           <div className="workspace-heading"><div><div className="eyebrow">NETWORK TOPOLOGY <span>·</span> UNDIRECTED</div><h2>Graph workspace</h2></div><div className="workspace-heading-right"><span className="model-equation">G(t) = (V, E, W)</span><span className="model-revision">REV. {String(iteration).padStart(2, "0")}</span></div></div>
-          <div className="graph-frame"><div className="graph-frame-header"><span>ACTIVE NETWORK</span><span>{metrics.activeNodeCount} NODES <i /> {metrics.activeEdgeCount} CONNECTIONS</span></div><GraphCanvas graph={graph} source={source} target={target} path={activePath} selected={selected} onSelect={onSelect} /><div className="graph-legend"><span><i className="legend-node source-legend" /> SOURCE</span><span><i className="legend-node target-legend" /> TARGET</span><span><i className="legend-line" /> ACTIVE</span><span><i className="legend-line disrupted-legend" /> DISRUPTED</span><span><i className="legend-line route-legend" /> CURRENT PATH</span></div></div>
+          <div className="graph-frame"><div className="graph-frame-header"><span>ACTIVE NETWORK</span><span>{metrics.activeNodeCount} NODES <i /> {metrics.activeEdgeCount} CONNECTIONS</span></div><GraphCanvas graph={graph} source={source} target={target} path={activePath} selected={selected} onSelect={onSelect} /><div className="graph-legend"><span><i className="legend-node source-legend" /> SOURCE</span><span><i className="legend-node target-legend" /> TARGET</span><span><i className="legend-node silent-legend" /> LOW ACTIVITY</span><span><i className="legend-line" /> ACTIVE</span><span><i className="legend-line disrupted-legend" /> DAMAGED</span><span><i className="legend-line route-legend" /> CURRENT PATH</span></div></div>
           {notice && <div className="notice" role="alert"><CircleHelp size={14} />{notice}</div>}
           <section className="inspection-strip"><div className="inspection-title"><span>SELECTION INSPECTOR</span><span className="selection-kind">{selected.type === "node" ? "NODE" : "CONNECTION"} · {selected.id}</span></div>{selectedNode ? <div className="inspection-grid"><InspectorValue label="NAME" value={selectedNode.name} /><InspectorValue label="ROLE" value={selectedNode.role} /><InspectorValue label="ACTIVATION" value={selectedNode.activation.toFixed(2)} /><InspectorValue label="CAPACITY" value={selectedNode.capacity.toFixed(2)} /><InspectorValue label="STATUS" value={selectedNode.status.toUpperCase()} tone={selectedNode.status === "active" ? "normal" : "damage"} /></div> : selectedEdge ? <div className="inspection-grid"><InspectorValue label="SOURCE → TARGET" value={`${selectedEdge.source} → ${selectedEdge.target}`} /><InspectorValue label="CURRENT WEIGHT" value={selectedEdge.weight.toFixed(3)} /><InspectorValue label="INITIAL WEIGHT" value={selectedEdge.initialWeight.toFixed(2)} /><InspectorValue label="DAMAGE" value={`${selectedEdge.damageSeverity}%`} /><InspectorValue label="USAGE / STATUS" value={`${selectedEdge.usageCount} · ${selectedEdge.active ? "ACTIVE" : "DISRUPTED"}`} tone={selectedEdge.active ? "normal" : "damage"} /></div> : <p className="empty-inspection">Select a node or connection to inspect its current model values.</p>}</section>
           <div className="scientific-note"><CircleHelp size={13} /><p>Connection weights are relative strengths in a synthetic graph model, not measured biological values. Traversal cost is 1 / weight. This model is an abstraction, not a biologically complete neural simulator.</p></div>

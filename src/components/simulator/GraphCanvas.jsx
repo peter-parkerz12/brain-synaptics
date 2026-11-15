@@ -1,8 +1,12 @@
 import { useEffect, useRef } from "react";
 
 const positions = {
-  A: { x: 70, y: 188 }, B: { x: 225, y: 92 }, C: { x: 390, y: 92 },
-  D: { x: 225, y: 292 }, E: { x: 455, y: 246 }, F: { x: 625, y: 188 },
+  A: { x: 70, y: 215 }, B: { x: 250, y: 115 }, C: { x: 450, y: 115 },
+  D: { x: 250, y: 320 }, E: { x: 450, y: 320 }, F: { x: 650, y: 215 },
+  G: { x: 180, y: 42 }, H: { x: 330, y: 42 }, I: { x: 165, y: 393 },
+  J: { x: 330, y: 393 }, K: { x: 535, y: 48 }, L: { x: 665, y: 100 },
+  M: { x: 65, y: 95 }, N: { x: 145, y: 165 }, O: { x: 535, y: 390 },
+  P: { x: 665, y: 340 }, Q: { x: 360, y: 178 }, R: { x: 360, y: 260 },
 };
 
 export function GraphCanvas({ graph, source, target, path = [], selected, onSelect }) {
@@ -25,6 +29,7 @@ export function GraphCanvas({ graph, source, target, path = [], selected, onSele
             node.id === source ? "source" : "",
             node.id === target ? "target" : "",
             node.capacity < 1 ? "damaged" : "",
+            node.activation < 0.45 && node.capacity === 1 ? "silent" : "",
             selected?.type === "node" && selected.id === node.id ? "selected" : "",
           ].filter(Boolean).join(" "),
         })),
@@ -34,6 +39,10 @@ export function GraphCanvas({ graph, source, target, path = [], selected, onSele
             !edge.active || edge.weight <= 0 ? "disrupted" : "",
             edge.weight < 0.4 && edge.active ? "weak" : "",
             edge.weight > edge.initialWeight + 1e-9 ? "strengthened" : "",
+            edge.damageSeverity > 0 ? "damaged" : "",
+            edgeRecoveryProgress(edge) >= 0.7 ? "recovery-strong" : "",
+            edgeRecoveryProgress(edge) >= 0.3 && edgeRecoveryProgress(edge) < 0.7 ? "recovery-mid" : "",
+            edgeRecoveryProgress(edge) > 0 && edgeRecoveryProgress(edge) < 0.3 ? "recovery-light" : "",
             pathEdges.includes(edge.id) ? "route" : "",
             selected?.type === "edge" && selected.id === edge.id ? "selected" : "",
           ].filter(Boolean).join(" "),
@@ -48,17 +57,22 @@ export function GraphCanvas({ graph, source, target, path = [], selected, onSele
         wheelSensitivity: 0.18,
         boxSelectionEnabled: false,
         style: [
-          { selector: "node", style: { "background-color": token("--panel-raised"), "border-color": token("--muted"), "border-width": 2, label: "data(label)", color: token("--foreground"), "font-family": "system-ui, sans-serif", "font-size": 15, "font-weight": 700, width: 48, height: 48, "text-valign": "center", "text-halign": "center", "overlay-opacity": 0 } },
+          { selector: "node", style: { "background-color": token("--panel-raised"), "border-color": token("--muted"), "border-width": 2, label: "data(label)", color: token("--foreground"), "font-family": "monospace", "font-size": 15, "font-weight": 700, width: 48, height: 48, "text-valign": "center", "text-halign": "center", "overlay-opacity": 0 } },
+          { selector: "node.silent", style: { "background-color": token("--silent-node"), "border-color": token("--muted-line"), color: token("--muted-foreground") } },
           { selector: "node.source", style: { "border-color": token("--primary"), "border-width": 3 } },
           { selector: "node.target", style: { "border-color": token("--primary"), "border-width": 3, "background-color": token("--primary-dim") } },
           { selector: "node.damaged", style: { "border-color": token("--damage"), "border-width": 3, "background-color": token("--damage-dim") } },
           { selector: "node.selected", style: { "border-color": token("--warning"), "border-width": 4 } },
-          { selector: "edge", style: { width: 2, "line-color": token("--muted-line"), "curve-style": "straight", label: "data(label)", color: token("--muted-foreground"), "font-family": "system-ui, sans-serif", "font-size": 10, "text-background-color": token("--background"), "text-background-opacity": 1, "text-background-padding": 2, "overlay-opacity": 0 } },
+          { selector: "edge", style: { width: 2, "line-color": token("--muted-line"), "curve-style": "straight", label: "", color: token("--muted-foreground"), "font-family": "monospace", "font-size": 10, "text-background-color": token("--background"), "text-background-opacity": 1, "text-background-padding": 2, "overlay-opacity": 0 } },
           { selector: "edge.weak", style: { width: 1 } },
           { selector: "edge.strengthened", style: { width: 3, "line-color": token("--secondary-green"), color: token("--secondary-green") } },
-          { selector: "edge.route", style: { width: 4, "line-color": token("--primary"), color: token("--primary") } },
+          { selector: "edge.route", style: { width: 4, "line-color": token("--primary"), color: token("--primary"), label: "data(label)" } },
+          { selector: "edge.damaged", style: { "line-color": token("--damage"), color: token("--damage"), label: "data(label)" } },
+          { selector: "edge.recovery-light", style: { width: 3, "line-color": token("--recovery-light"), color: token("--recovery-light") } },
+          { selector: "edge.recovery-mid", style: { width: 4, "line-color": token("--recovery-mid"), color: token("--recovery-mid") } },
+          { selector: "edge.recovery-strong", style: { width: 5, "line-color": token("--recovery-strong"), color: token("--recovery-strong") } },
           { selector: "edge.disrupted", style: { width: 2, "line-color": token("--damage"), "line-style": "dashed", color: token("--damage") } },
-          { selector: "edge.selected", style: { width: 5, "line-color": token("--warning"), color: token("--warning") } },
+          { selector: "edge.selected", style: { width: 6, label: "data(label)" } },
         ],
       });
       cy.on("tap", "node", (event) => onSelect({ type: "node", id: event.target.id() }));
@@ -67,7 +81,14 @@ export function GraphCanvas({ graph, source, target, path = [], selected, onSele
     return () => { disposed = true; cy?.destroy(); };
   }, [graph, source, target, pathKey, selected, onSelect]);
 
-  return <div className="graph-scroll"><div className="graph-canvas" ref={hostRef} role="img" aria-label="Interactive weighted network graph with six nodes and seven connections" /></div>;
+  return <div className="graph-scroll"><div className="graph-canvas" ref={hostRef} role="img" aria-label={`Interactive weighted network graph with ${graph.nodes.size} nodes and ${graph.edges.size} connections`} /></div>;
+}
+
+function edgeRecoveryProgress(edge) {
+  if (!edge.active || edge.damageSeverity <= 0 || edge.damageSeverity >= 100) return 0;
+  const damagedWeight = edge.initialWeight * (1 - edge.damageSeverity / 100);
+  const recoveryRange = edge.initialWeight - damagedWeight;
+  return recoveryRange > 0 ? Math.max(0, Math.min(1, (edge.weight - damagedWeight) / recoveryRange)) : 0;
 }
 
 function resolveCssColor(value) {

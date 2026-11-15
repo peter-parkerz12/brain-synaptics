@@ -8,10 +8,10 @@ import {
 const closeTo = (value, expected) => expect(value).toBeCloseTo(expected, 4);
 
 describe("deterministic neural graph model", () => {
-  it("loads the exact six-node, seven-edge baseline and expected path costs", () => {
+  it("loads the 18-node network and preserves the baseline path and cost", () => {
     const graph = WeightedGraph.baseline();
-    expect(graph.nodes.size).toBe(6);
-    expect(graph.edges.size).toBe(7);
+    expect(graph.nodes.size).toBe(18);
+    expect(graph.edges.size).toBe(25);
     expect(breadthFirstSearch(graph, "A", "F").reachable).toBe(true);
     expect(dijkstra(graph, "A", "F").path).toEqual(["A", "B", "C", "E", "F"]);
     closeTo(dijkstra(graph, "A", "F").cost, 4.6487);
@@ -49,6 +49,23 @@ describe("deterministic neural graph model", () => {
     expect(values[0]).toBeCloseTo(0.37, 10);
     expect(values[1]).toBeCloseTo(0.433, 10);
     expect(values[2]).toBeCloseTo(0.4897, 10);
+  });
+
+  it("gradually strengthens a partially damaged active edge along the selected route", () => {
+    const graph = WeightedGraph.baseline();
+    applyEdgeDamage(graph, "B-C", 40);
+    const damagedWeight = graph.getEdge("B-C").weight;
+    const firstStep = adaptationStep(graph, "A", "F", 0.1, 0, 1);
+    const firstWeight = graph.getEdge("B-C").weight;
+    const secondStep = adaptationStep(graph, "A", "F", 0.1, 0, 2);
+
+    expect(firstStep.path).toEqual(["A", "B", "C", "E", "F"]);
+    expect(secondStep.path).toEqual(firstStep.path);
+    expect(firstWeight).toBeGreaterThan(damagedWeight);
+    expect(graph.getEdge("B-C").weight).toBeGreaterThan(firstWeight);
+    expect(graph.getEdge("B-C").weight).toBeLessThan(graph.getEdge("B-C").initialWeight);
+    expect(graph.getEdge("B-C").active).toBe(true);
+    expect(graph.getEdge("B-C").damageSeverity).toBe(40);
   });
 
   it("strengthens only active edges on the surviving route and keeps weights bounded", () => {
