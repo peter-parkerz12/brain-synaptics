@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "build:vercel": "VERCEL=1 vite build",
+    "preview:vercel": "npm run build:vercel && cd .vercel/output && npx srvx --static ./static ./functions/__server.func/index.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",

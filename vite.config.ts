@@ -15,4 +15,6 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Nitro is wired by @lovable.dev/vite-tanstack-config. On Vercel (VERCEL=1) or NITRO_PRESET=vercel
+  // the build emits .vercel/output (Build Output API). Default local/CI builds use cloudflare-module.
 });
