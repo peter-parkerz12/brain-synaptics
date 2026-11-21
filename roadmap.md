@@ -1,3 +1,3 @@
 - [x] Restore the green retro interface and expand the baseline network to 18 nodes.
 - [x] Show low-activity nodes in grey, damaged elements in red, and gradual green recovery for active damaged edges.
-- [ ] Run graph tests and verify damage, adaptation, responsive layout, and the current build.
+- [x] Run graph tests and verify damage, adaptation, responsive layout, and the current build.

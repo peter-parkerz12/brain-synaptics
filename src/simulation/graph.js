@@ -10,7 +10,7 @@ export const BASE_NODES = Object.freeze([
   { id: "I", name: "Alternative Relay 1", role: "Intermediate", activation: 0.28, capacity: 1 },
   { id: "J", name: "Alternative Relay 2", role: "Intermediate", activation: 0.42, capacity: 1 },
   { id: "K", name: "Secondary Relay 1", role: "Intermediate", activation: 0.34, capacity: 1 },
-  { id: "L", name: "Secondary Relay 2", role: "Intermediate", activation: 0.30, capacity: 1 },
+  { id: "L", name: "Secondary Relay 2", role: "Intermediate", activation: 0.3, capacity: 1 },
   { id: "M", name: "Peripheral Relay 1", role: "Intermediate", activation: 0.25, capacity: 1 },
   { id: "N", name: "Peripheral Relay 2", role: "Intermediate", activation: 0.39, capacity: 1 },
   { id: "O", name: "Downstream Relay 1", role: "Intermediate", activation: 0.33, capacity: 1 },
@@ -30,18 +30,18 @@ export const BASE_EDGES = Object.freeze([
   { id: "B-G", source: "B", target: "G", initialWeight: 0.34 },
   { id: "G-H", source: "G", target: "H", initialWeight: 0.28 },
   { id: "H-C", source: "H", target: "C", initialWeight: 0.32 },
-  { id: "D-I", source: "D", target: "I", initialWeight: 0.30 },
+  { id: "D-I", source: "D", target: "I", initialWeight: 0.3 },
   { id: "I-J", source: "I", target: "J", initialWeight: 0.28 },
-  { id: "J-E", source: "J", target: "E", initialWeight: 0.30 },
+  { id: "J-E", source: "J", target: "E", initialWeight: 0.3 },
   { id: "C-K", source: "C", target: "K", initialWeight: 0.32 },
   { id: "K-L", source: "K", target: "L", initialWeight: 0.28 },
   { id: "L-E", source: "L", target: "E", initialWeight: 0.32 },
-  { id: "A-M", source: "A", target: "M", initialWeight: 0.30 },
+  { id: "A-M", source: "A", target: "M", initialWeight: 0.3 },
   { id: "M-N", source: "M", target: "N", initialWeight: 0.26 },
-  { id: "N-D", source: "N", target: "D", initialWeight: 0.30 },
-  { id: "E-O", source: "E", target: "O", initialWeight: 0.30 },
+  { id: "N-D", source: "N", target: "D", initialWeight: 0.3 },
+  { id: "E-O", source: "E", target: "O", initialWeight: 0.3 },
   { id: "O-P", source: "O", target: "P", initialWeight: 0.28 },
-  { id: "P-F", source: "P", target: "F", initialWeight: 0.30 },
+  { id: "P-F", source: "P", target: "F", initialWeight: 0.3 },
   { id: "B-Q", source: "B", target: "Q", initialWeight: 0.32 },
   { id: "Q-R", source: "Q", target: "R", initialWeight: 0.28 },
   { id: "R-D", source: "R", target: "D", initialWeight: 0.32 },
@@ -57,21 +57,40 @@ export class WeightedGraph {
   }
 
   addNode(node) {
-    if (!node?.id || this.nodes.has(node.id)) throw new Error(`Invalid or duplicate node ID: ${node?.id ?? "(empty)"}`);
+    if (!node?.id || this.nodes.has(node.id))
+      throw new Error(`Invalid or duplicate node ID: ${node?.id ?? "(empty)"}`);
     const record = { ...node, capacity: node.capacity ?? 1, status: node.status ?? "active" };
-    if (!Number.isFinite(record.capacity) || record.capacity < 0 || record.capacity > 1) throw new Error(`Invalid capacity for node ${record.id}.`);
+    if (!Number.isFinite(record.capacity) || record.capacity < 0 || record.capacity > 1)
+      throw new Error(`Invalid capacity for node ${record.id}.`);
     this.nodes.set(record.id, record);
     this.adjacency.set(record.id, new Set());
     return record;
   }
 
   addEdge(edge) {
-    if (!edge?.id || this.edges.has(edge.id)) throw new Error(`Invalid or duplicate edge ID: ${edge?.id ?? "(empty)"}`);
-    if (!this.nodes.has(edge.source) || !this.nodes.has(edge.target) || edge.source === edge.target) throw new Error(`Invalid node reference for edge ${edge.id}.`);
+    if (!edge?.id || this.edges.has(edge.id))
+      throw new Error(`Invalid or duplicate edge ID: ${edge?.id ?? "(empty)"}`);
+    if (!this.nodes.has(edge.source) || !this.nodes.has(edge.target) || edge.source === edge.target)
+      throw new Error(`Invalid node reference for edge ${edge.id}.`);
     const initialWeight = edge.initialWeight ?? edge.weight;
     const weight = edge.weight ?? initialWeight;
-    if (!Number.isFinite(initialWeight) || initialWeight < 0 || initialWeight > 1 || !Number.isFinite(weight) || weight < 0 || weight > 1) throw new Error(`Invalid weight for edge ${edge.id}.`);
-    const record = { ...edge, initialWeight, weight, active: edge.active ?? true, damageSeverity: edge.damageSeverity ?? 0, usageCount: edge.usageCount ?? 0 };
+    if (
+      !Number.isFinite(initialWeight) ||
+      initialWeight < 0 ||
+      initialWeight > 1 ||
+      !Number.isFinite(weight) ||
+      weight < 0 ||
+      weight > 1
+    )
+      throw new Error(`Invalid weight for edge ${edge.id}.`);
+    const record = {
+      ...edge,
+      initialWeight,
+      weight,
+      active: edge.active ?? true,
+      damageSeverity: edge.damageSeverity ?? 0,
+      usageCount: edge.usageCount ?? 0,
+    };
     this.edges.set(record.id, record);
     this.adjacency.get(record.source).add(record.id);
     this.adjacency.get(record.target).add(record.id);
@@ -91,19 +110,25 @@ export class WeightedGraph {
     if (!edge) throw new Error(`Edge ${id} was not found.`);
     edge.active = false;
     edge.damageSeverity = 100;
+    edge.weight = 0;
   }
 
   updateEdgeWeight(id, weight) {
     const edge = this.getEdge(id);
     if (!edge) throw new Error(`Edge ${id} was not found.`);
-    if (!Number.isFinite(weight) || weight < 0 || weight > 1) throw new Error(`Weight for ${id} must be between 0 and 1.`);
+    if (!Number.isFinite(weight) || weight < 0 || weight > 1)
+      throw new Error(`Weight for ${id} must be between 0 and 1.`);
     edge.weight = weight;
     if (weight === 0) edge.active = false;
     return edge;
   }
 
-  getNode(id) { return this.nodes.get(id); }
-  getEdge(id) { return this.edges.get(id); }
+  getNode(id) {
+    return this.nodes.get(id);
+  }
+  getEdge(id) {
+    return this.edges.get(id);
+  }
 
   getNeighbors(id) {
     const node = this.getNode(id);
@@ -114,7 +139,8 @@ export class WeightedGraph {
       if (!edge?.active || !Number.isFinite(edge.weight) || edge.weight <= 0) continue;
       const neighborId = edge.source === id ? edge.target : edge.source;
       const neighbor = this.getNode(neighborId);
-      if (neighbor?.capacity > 0 && neighbor.status === "active") neighbors.push({ node: neighbor, edge });
+      if (neighbor?.capacity > 0 && neighbor.status === "active")
+        neighbors.push({ node: neighbor, edge });
     }
     return neighbors;
   }
@@ -122,7 +148,8 @@ export class WeightedGraph {
   rebuildActiveGraph() {
     this.adjacency = new Map([...this.nodes.keys()].map((id) => [id, new Set()]));
     for (const edge of this.edges.values()) {
-      if (!this.adjacency.has(edge.source) || !this.adjacency.has(edge.target)) throw new Error(`Edge ${edge.id} references a missing node.`);
+      if (!this.adjacency.has(edge.source) || !this.adjacency.has(edge.target))
+        throw new Error(`Edge ${edge.id} references a missing node.`);
       this.adjacency.get(edge.source).add(edge.id);
       this.adjacency.get(edge.target).add(edge.id);
       if (edge.weight === 0) edge.active = false;
@@ -138,21 +165,37 @@ export class WeightedGraph {
     }
     for (const [id, edge] of this.edges) {
       if (id !== edge.id) errors.push(`Edge map key mismatch: ${id}.`);
-      if (!this.nodes.has(edge.source) || !this.nodes.has(edge.target)) errors.push(`Edge ${id} references a missing node.`);
-      if (!Number.isFinite(edge.weight) || edge.weight < 0 || edge.weight > 1) errors.push(`Edge ${id} has an invalid weight.`);
-      if (!this.adjacency.get(edge.source)?.has(id) || !this.adjacency.get(edge.target)?.has(id)) errors.push(`Edge ${id} is missing from an adjacency list.`);
+      if (!this.nodes.has(edge.source) || !this.nodes.has(edge.target))
+        errors.push(`Edge ${id} references a missing node.`);
+      if (!Number.isFinite(edge.weight) || edge.weight < 0 || edge.weight > 1)
+        errors.push(`Edge ${id} has an invalid weight.`);
+      if (!this.adjacency.get(edge.source)?.has(id) || !this.adjacency.get(edge.target)?.has(id))
+        errors.push(`Edge ${id} is missing from an adjacency list.`);
     }
     return { valid: errors.length === 0, errors };
   }
 
-  toJSON() { return { nodes: [...this.nodes.values()].map((node) => ({ ...node })), edges: [...this.edges.values()].map((edge) => ({ ...edge })) }; }
-  clone() { return new WeightedGraph(this.toJSON()); }
-  static baseline() { return new WeightedGraph({ nodes: BASE_NODES, edges: BASE_EDGES }); }
+  toJSON() {
+    return {
+      nodes: [...this.nodes.values()].map((node) => ({ ...node })),
+      edges: [...this.edges.values()].map((edge) => ({ ...edge })),
+    };
+  }
+  clone() {
+    return new WeightedGraph(this.toJSON());
+  }
+  static baseline() {
+    return new WeightedGraph({ nodes: BASE_NODES, edges: BASE_EDGES });
+  }
 }
 
 export class MinPriorityQueue {
-  constructor() { this.items = []; }
-  get size() { return this.items.length; }
+  constructor() {
+    this.items = [];
+  }
+  get size() {
+    return this.items.length;
+  }
   push(value, priority) {
     const item = { value, priority };
     this.items.push(item);
@@ -175,7 +218,10 @@ export class MinPriorityQueue {
         const left = index * 2 + 1;
         const right = left + 1;
         if (left >= this.items.length) break;
-        const child = right < this.items.length && this.items[right].priority < this.items[left].priority ? right : left;
+        const child =
+          right < this.items.length && this.items[right].priority < this.items[left].priority
+            ? right
+            : left;
         if (this.items[child].priority >= last.priority) break;
         this.items[index] = this.items[child];
         index = child;
@@ -187,10 +233,13 @@ export class MinPriorityQueue {
 }
 
 export function breadthFirstSearch(graph, source, target) {
-  if (!graph.getNode(source)) return { reachable: false, path: [], error: `Source node ${source} was not found.` };
-  if (!graph.getNode(target)) return { reachable: false, path: [], error: `Target node ${target} was not found.` };
+  if (!graph.getNode(source))
+    return { reachable: false, path: [], error: `Source node ${source} was not found.` };
+  if (!graph.getNode(target))
+    return { reachable: false, path: [], error: `Target node ${target} was not found.` };
   const first = graph.getNode(source);
-  if (first.capacity <= 0 || first.status !== "active") return { reachable: false, path: [], error: `Source node ${source} is unavailable.` };
+  if (first.capacity <= 0 || first.status !== "active")
+    return { reachable: false, path: [], error: `Source node ${source} is unavailable.` };
   const queue = [source];
   let head = 0;
   const visited = new Set([source]);
@@ -212,7 +261,8 @@ export function breadthFirstSearch(graph, source, target) {
 }
 
 export function depthFirstPaths(graph, source, target, maxPaths = 12) {
-  if (!Number.isInteger(maxPaths) || maxPaths < 1) throw new Error("Path limit must be a positive integer.");
+  if (!Number.isInteger(maxPaths) || maxPaths < 1)
+    throw new Error("Path limit must be a positive integer.");
   if (!graph.getNode(source) || !graph.getNode(target)) return [];
   if (graph.getNode(source).capacity <= 0 || graph.getNode(source).status !== "active") return [];
   const paths = [];
@@ -220,7 +270,10 @@ export function depthFirstPaths(graph, source, target, maxPaths = 12) {
   const path = [source];
   function visit(current) {
     if (paths.length >= maxPaths) return;
-    if (current === target) { paths.push([...path]); return; }
+    if (current === target) {
+      paths.push([...path]);
+      return;
+    }
     for (const { node } of graph.getNeighbors(current)) {
       if (visited.has(node.id)) continue;
       visited.add(node.id);
@@ -236,10 +289,28 @@ export function depthFirstPaths(graph, source, target, maxPaths = 12) {
 }
 
 export function dijkstra(graph, source, target) {
-  if (!graph.getNode(source)) return { reachable: false, path: [], cost: Infinity, error: `Source node ${source} was not found.` };
-  if (!graph.getNode(target)) return { reachable: false, path: [], cost: Infinity, error: `Target node ${target} was not found.` };
+  if (!graph.getNode(source))
+    return {
+      reachable: false,
+      path: [],
+      cost: Infinity,
+      error: `Source node ${source} was not found.`,
+    };
+  if (!graph.getNode(target))
+    return {
+      reachable: false,
+      path: [],
+      cost: Infinity,
+      error: `Target node ${target} was not found.`,
+    };
   const sourceNode = graph.getNode(source);
-  if (sourceNode.capacity <= 0 || sourceNode.status !== "active") return { reachable: false, path: [], cost: Infinity, error: `Source node ${source} is unavailable.` };
+  if (sourceNode.capacity <= 0 || sourceNode.status !== "active")
+    return {
+      reachable: false,
+      path: [],
+      cost: Infinity,
+      error: `Source node ${source} is unavailable.`,
+    };
   const distances = new Map([...graph.nodes.keys()].map((id) => [id, Infinity]));
   const parent = new Map();
   const queue = new MinPriorityQueue();
@@ -251,9 +322,11 @@ export function dijkstra(graph, source, target) {
     const { value: id, priority } = current;
     if (priority !== distances.get(id)) continue;
     if (id === target) break;
+    const fromNode = graph.getNode(id);
     for (const { node, edge } of graph.getNeighbors(id)) {
-      if (!Number.isFinite(edge.weight) || edge.weight <= 0) continue;
-      const candidate = priority + 1 / edge.weight;
+      const step = traversalCost(edge, fromNode, node);
+      if (!Number.isFinite(step)) continue;
+      const candidate = priority + step;
       if (candidate < distances.get(node.id)) {
         distances.set(node.id, candidate);
         parent.set(node.id, id);
@@ -277,18 +350,63 @@ export function pathToEdgeIds(graph, path) {
   for (let index = 0; index < path.length - 1; index += 1) {
     const edgeId = [...(graph.adjacency.get(path[index]) ?? [])].find((id) => {
       const edge = graph.getEdge(id);
-      return edge?.active && edge.weight > 0 && (edge.source === path[index + 1] || edge.target === path[index + 1]);
+      return (
+        edge?.active &&
+        edge.weight > 0 &&
+        (edge.source === path[index + 1] || edge.target === path[index + 1])
+      );
     });
     if (edgeId) ids.push(edgeId);
   }
   return ids;
 }
 
+export const SIMPLE_PATH_LIMIT = 200;
+
+export function traversalCost(edge, fromNode, toNode) {
+  const weight = edge?.weight;
+  const fromCapacity = fromNode?.capacity;
+  const toCapacity = toNode?.capacity;
+  if (!Number.isFinite(weight) || weight <= 0) return Infinity;
+  if (
+    !Number.isFinite(fromCapacity) ||
+    fromCapacity <= 0 ||
+    !Number.isFinite(toCapacity) ||
+    toCapacity <= 0
+  )
+    return Infinity;
+  return 1 / (weight * fromCapacity * toCapacity);
+}
+
+export function networkHasDamage(graph) {
+  for (const edge of graph.edges.values()) {
+    if (edge.damageSeverity > 0 || !edge.active || edge.weight <= 0) return true;
+  }
+  for (const node of graph.nodes.values()) {
+    if (node.capacity < 1 || node.status !== "active") return true;
+  }
+  return false;
+}
+
+export function simulatedPerformance(baselineCost, current) {
+  if (!current?.reachable || !Number.isFinite(baselineCost)) return 0;
+  if (current.cost === 0) return 1;
+  return baselineCost / current.cost;
+}
+
 export function analyzeConnectivity(graph, source, target, baselineCost) {
   const current = dijkstra(graph, source, target);
-  const paths = depthFirstPaths(graph, source, target, 24);
-  const activeNodes = [...graph.nodes.values()].filter((node) => node.capacity > 0 && node.status === "active");
-  const activeEdges = [...graph.edges.values()].filter((edge) => edge.active && edge.weight > 0 && graph.getNode(edge.source)?.capacity > 0 && graph.getNode(edge.target)?.capacity > 0);
+  const paths = depthFirstPaths(graph, source, target, SIMPLE_PATH_LIMIT);
+  const activeNodes = [...graph.nodes.values()].filter(
+    (node) => node.capacity > 0 && node.status === "active",
+  );
+  const activeEdges = [...graph.edges.values()].filter(
+    (edge) =>
+      edge.active &&
+      edge.weight > 0 &&
+      graph.getNode(edge.source)?.capacity > 0 &&
+      graph.getNode(edge.target)?.capacity > 0,
+  );
   const components = connectedComponents(graph);
   const { bridges, articulationPoints } = findBridgesAndArticulationPoints(graph);
   return {
@@ -296,11 +414,16 @@ export function analyzeConnectivity(graph, source, target, baselineCost) {
     current,
     activeNodeCount: activeNodes.length,
     activeEdgeCount: activeEdges.length,
-    disruptedEdgeCount: [...graph.edges.values()].filter((edge) => !edge.active || edge.weight === 0).length,
+    disruptedEdgeCount: [...graph.edges.values()].filter(
+      (edge) => !edge.active || edge.weight === 0,
+    ).length,
     damagedNodeCount: [...graph.nodes.values()].filter((node) => node.capacity < 1).length,
-    averageWeight: activeEdges.length ? activeEdges.reduce((total, edge) => total + edge.weight, 0) / activeEdges.length : 0,
+    averageWeight: activeEdges.length
+      ? activeEdges.reduce((total, edge) => total + edge.weight, 0) / activeEdges.length
+      : 0,
     alternativePathCount: paths.length,
-    performance: current.reachable && Number.isFinite(baselineCost) && current.cost > 0 ? Math.min(1, baselineCost / current.cost) : 0,
+    simplePathsLimited: paths.length >= SIMPLE_PATH_LIMIT,
+    performance: simulatedPerformance(baselineCost, current),
     components,
     bridges,
     articulationPoints,
@@ -319,7 +442,10 @@ export function connectedComponents(graph) {
       const id = stack.pop();
       component.push(id);
       for (const { node: neighbor } of graph.getNeighbors(id)) {
-        if (!visited.has(neighbor.id)) { visited.add(neighbor.id); stack.push(neighbor.id); }
+        if (!visited.has(neighbor.id)) {
+          visited.add(neighbor.id);
+          stack.push(neighbor.id);
+        }
       }
     }
     components.push(component.sort());
@@ -348,10 +474,12 @@ export function findBridgesAndArticulationPoints(graph) {
         if (low.get(neighbor) > discovery.get(id)) bridges.push(edge.id);
         if (!parent.has(id) && children > 1) articulationPoints.add(id);
         if (parent.has(id) && low.get(neighbor) >= discovery.get(id)) articulationPoints.add(id);
-      } else if (neighbor !== parent.get(id)) low.set(id, Math.min(low.get(id), discovery.get(neighbor)));
+      } else if (neighbor !== parent.get(id))
+        low.set(id, Math.min(low.get(id), discovery.get(neighbor)));
     }
   }
-  for (const node of graph.nodes.values()) if (node.capacity > 0 && node.status === "active" && !discovery.has(node.id)) visit(node.id);
+  for (const node of graph.nodes.values())
+    if (node.capacity > 0 && node.status === "active" && !discovery.has(node.id)) visit(node.id);
   return { bridges: bridges.sort(), articulationPoints: [...articulationPoints].sort() };
 }
 
@@ -369,7 +497,8 @@ export function applyEdgeDamage(graph, edgeId, severity) {
 export function restoreEdge(graph, edgeId) {
   const edge = graph.getEdge(edgeId);
   if (!edge) throw new Error(`Edge ${edgeId} was not found.`);
-  if (edge.active && edge.damageSeverity === 0) throw new Error(`Edge ${edgeId} is already active.`);
+  if (edge.active && edge.damageSeverity === 0)
+    throw new Error(`Edge ${edgeId} is already active.`);
   edge.weight = edge.initialWeight;
   edge.damageSeverity = 0;
   edge.active = true;
@@ -389,7 +518,8 @@ export function applyNodeDamage(graph, nodeId, severity) {
 export function restoreNode(graph, nodeId) {
   const node = graph.getNode(nodeId);
   if (!node) throw new Error(`Node ${nodeId} was not found.`);
-  if (node.capacity === 1 && node.status === "active") throw new Error(`Node ${nodeId} is already active.`);
+  if (node.capacity === 1 && node.status === "active")
+    throw new Error(`Node ${nodeId} is already active.`);
   node.capacity = 1;
   node.status = "active";
   graph.rebuildActiveGraph();
@@ -397,23 +527,37 @@ export function restoreNode(graph, nodeId) {
 }
 
 function validateSeverity(severity) {
-  if (!Number.isFinite(severity) || severity < 0 || severity > 100) throw new Error("Damage severity must be between 0 and 100%.");
+  if (!Number.isFinite(severity) || severity <= 0 || severity > 100)
+    throw new Error("Damage severity must be greater than 0% and at most 100%.");
 }
 
 export function adaptationStep(graph, source, target, learningRate, decayRate, iteration) {
-  if (!Number.isFinite(learningRate) || learningRate < 0 || learningRate > 1) throw new Error("Learning rate must be between 0 and 1.");
-  if (!Number.isFinite(decayRate) || decayRate < 0 || decayRate > 1) throw new Error("Decay rate must be between 0 and 1.");
+  if (!Number.isFinite(learningRate) || learningRate < 0 || learningRate > 1)
+    throw new Error("Learning rate must be between 0 and 1.");
+  if (!Number.isFinite(decayRate) || decayRate < 0 || decayRate > 1)
+    throw new Error("Decay rate must be between 0 and 1.");
   const route = dijkstra(graph, source, target);
-  if (!route.reachable) return { reachable: false, path: [], changes: [], error: route.error ?? "Target is unreachable; no pathway was adapted." };
+  if (!route.reachable)
+    return {
+      reachable: false,
+      path: [],
+      changes: [],
+      error: route.error ?? "Target is unreachable; no pathway was adapted.",
+    };
   const selectedEdges = new Set(route.edgeIds);
   const changes = [];
   for (const edge of graph.edges.values()) {
     if (!edge.active || edge.weight <= 0) continue;
     const activity = selectedEdges.has(edge.id) ? 1 : 0;
     const previous = edge.weight;
-    edge.weight = Math.max(0, Math.min(1, previous + learningRate * activity * (1 - previous) - decayRate * previous));
+    edge.weight = Math.max(
+      0,
+      Math.min(1, previous + learningRate * activity * (1 - previous) - decayRate * previous),
+    );
+    if (edge.weight === 0) edge.active = false;
     if (activity > 0) edge.usageCount += 1;
-    if (Math.abs(edge.weight - previous) > Number.EPSILON) changes.push({ edgeId: edge.id, previous, weight: edge.weight, activity });
+    if (Math.abs(edge.weight - previous) > Number.EPSILON)
+      changes.push({ edgeId: edge.id, previous, weight: edge.weight, activity });
   }
   return { reachable: true, path: route.path, edgeIds: route.edgeIds, changes, iteration };
 }
