@@ -2,7 +2,9 @@
 
 An interactive, deterministic model of a synthetic neural network. The network is an undirected weighted graph. Damage, search, and activity-dependent plasticity all run locally in the browser.
 
-The original A–F route stays `A → B → C → E → F`. On an undamaged network its cost is `1/0.9 + 1/0.85 + 1/0.8 + 1/0.9`.
+The original 18-node A–F route stays `A → B → C → E → F`. On an undamaged network its cost is `1/0.9 + 1/0.85 + 1/0.8 + 1/0.9`.
+
+Use the **Network size** control (10–60 nodes) to regenerate a connected synthetic graph. Source **A** and target **F** stay fixed. The 18-node preset is the published reference topology.
 
 ## Model
 

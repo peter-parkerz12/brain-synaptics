@@ -280,6 +280,172 @@
   .right-rail {
     min-width: 0;
   }
+  .workflow-guide {
+    margin: 0 0 16px;
+    padding: 12px 12px 11px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--primary) 6%, transparent);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .workflow-step-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--secondary-green);
+    letter-spacing: 0.04em;
+  }
+  .workflow-guide strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--foreground);
+    font-size: 12px;
+  }
+  .workflow-guide p {
+    margin: 0 0 8px;
+    color: var(--muted-foreground);
+  }
+  .workflow-next {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .mission-control {
+    margin: 0 0 16px;
+    padding: 12px 12px 11px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .mission-stage {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--secondary-green);
+    letter-spacing: 0.04em;
+    font-size: 11px;
+  }
+  .mission-title {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--foreground);
+    font-size: 12px;
+  }
+  .mission-detail {
+    margin: 0 0 10px;
+    color: var(--muted-foreground);
+  }
+  .mission-stats {
+    display: grid;
+    gap: 6px;
+    margin: 0 0 12px;
+  }
+  .mission-stats div {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: 8px;
+    align-items: baseline;
+  }
+  .mission-stats dt {
+    color: var(--muted-foreground);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .mission-stats dd {
+    margin: 0;
+    color: var(--foreground);
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+  .mission-primary {
+    margin-bottom: 10px;
+  }
+  .mission-cta {
+    width: 100%;
+  }
+  .mission-legend-copy {
+    margin: 0;
+    color: var(--muted-foreground);
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  .experience-chip {
+    border-color: var(--secondary-green);
+    color: var(--secondary-green);
+  }
+  .state-chip-technical {
+    opacity: 0.72;
+    font-size: 10px;
+  }
+  .damage-mode-active {
+    border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+    padding: 10px 10px 12px;
+    background: color-mix(in srgb, var(--warning) 6%, transparent);
+  }
+  .damage-mode-banner {
+    color: var(--warning);
+  }
+  .advanced-simulation {
+    padding: 0 0 12px;
+    margin: 0 0 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .advanced-simulation > summary {
+    cursor: pointer;
+    list-style: none;
+    margin-bottom: 10px;
+  }
+  .advanced-simulation > summary::-webkit-details-marker {
+    display: none;
+  }
+  .plasticity-section-inner {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border);
+  }
+  .iteration-limit-note {
+    font-size: 10px;
+  }
+  .graph-legend-experience {
+    justify-content: flex-start;
+    gap: 12px 18px;
+  }
+  .legend-swatch {
+    display: inline-block;
+    width: 14px;
+    height: 6px;
+    border-radius: 1px;
+  }
+  .legend-grey {
+    background: #41494d;
+  }
+  .legend-red {
+    background: #ff4545;
+    box-shadow: 0 0 6px rgba(255, 69, 69, 0.35);
+  }
+  .legend-green-soft {
+    background: #b7f7c5;
+  }
+  .legend-green-strong {
+    background: #16c75a;
+    box-shadow: 0 0 6px rgba(22, 199, 90, 0.28);
+  }
+  .section-help {
+    margin: 0 0 12px;
+    color: var(--muted-foreground);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .section-help.damage-tone {
+    color: var(--warning);
+  }
+  .evaluate-button {
+    width: 100%;
+    margin-bottom: 12px;
+  }
   .control-section,
   .results-section {
     padding: 0 0 17px;
@@ -538,6 +704,14 @@
   }
   .route-legend {
     background: var(--primary);
+  }
+  .baseline-route-legend {
+    background: var(--muted-foreground);
+    border-top: 1px dotted var(--muted-foreground);
+  }
+  .preview-route-legend {
+    background: var(--warning);
+    border-top: 1px dashed var(--warning);
   }
   .legend-hint {
     color: var(--secondary-green);
@@ -943,6 +1117,15 @@
   .chart-table td,
   .chart-table th[scope="row"] {
     color: var(--foreground);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-dot.running {
+    animation: none;
+  }
+  .progress-track span {
+    transition: none;
   }
 }
 

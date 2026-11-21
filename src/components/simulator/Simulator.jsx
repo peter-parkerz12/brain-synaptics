@@ -20,54 +20,102 @@ import {
   SIMPLE_PATH_LIMIT,
   WeightedGraph,
   adaptationStep,
-  analyzeConnectivity,
   applyEdgeDamage,
   applyNodeDamage,
-  breadthFirstSearch,
-  depthFirstPaths,
-  dijkstra,
+  isEdgeVisuallyTraversable,
   networkHasDamage,
   restoreEdge,
   restoreNode,
+  validateGraphIntegrity,
 } from "@/simulation/graph.js";
+import {
+  DEFAULT_SOURCE_ID,
+  DEFAULT_TARGET_ID,
+  MAX_NETWORK_NODES,
+  MIN_NETWORK_NODES,
+  generateSyntheticNetwork,
+} from "@/simulation/network-generator.js";
+import { buildSimulationView } from "@/simulation/simulation-state.js";
+import {
+  WORKFLOW,
+  WORKFLOW_LABEL,
+  canAdapt,
+  canAnalyse,
+  canApplyDamage,
+  canConfigureNetwork,
+  canEvaluate,
+  canRestore,
+  getWorkflowGuidance,
+  resolveWorkflowAfterRestore,
+  runDisruptionAnalysis,
+} from "@/simulation/simulation-workflow.js";
+import {
+  PLASTICITY_STOP_REASON,
+  formatPathwaySwitch,
+  plasticityStopReason,
+  preparePlasticityRun,
+} from "@/simulation/plasticity-simulation.js";
+import {
+  EXPERIENCE_LABEL,
+  EXPERIENCE_STAGE,
+  countDamage,
+  resolveExperienceStage,
+} from "@/components/simulator/graph-visual-state.js";
 
 const MAX_ITERATIONS = 20;
-const PHASE = {
-  baseline: "S0 · BASELINE",
-  damage: "S1 · AFTER DAMAGE",
-  recruited: "S2 · PATHWAY RECRUITED",
-  adapted: "S3 · AFTER ADAPTATION",
-};
+const ADAPTATION_TICK_MS = 280;
 
-const initialHistory = () => {
-  const graph = WeightedGraph.baseline();
-  const base = dijkstra(graph, "A", "F");
-  const metrics = analyzeConnectivity(graph, "A", "F", base.cost);
+const createPristineNetwork = (networkSize) => generateSyntheticNetwork(networkSize);
+
+const initialHistory = (graph, referenceGraph, source, target) => {
+  const view = buildSimulationView(graph, referenceGraph, source, target);
   return [
     {
       index: 0,
       iteration: 0,
-      state: PHASE.baseline,
+      state: WORKFLOW_LABEL[WORKFLOW.baseline],
       graph: graph.toJSON(),
-      cost: metrics.current.cost,
-      performance: metrics.performance,
+      cost: view.metrics.current.cost,
+      performance: view.metrics.performance,
     },
   ];
 };
 
 export function Simulator() {
-  const [graph, setGraph] = useState(() => WeightedGraph.baseline());
-  const [source, setSource] = useState("A");
-  const [target, setTarget] = useState("F");
+  const [networkSize, setNetworkSize] = useState(18);
+  const [referenceGraphJson, setReferenceGraphJson] = useState(() =>
+    createPristineNetwork(18).toJSON(),
+  );
+  const [graph, setGraph] = useState(() => createPristineNetwork(18));
+  const [source, setSource] = useState(DEFAULT_SOURCE_ID);
+  const [target, setTarget] = useState(DEFAULT_TARGET_ID);
   const [damageType, setDamageType] = useState("node");
   const [severity, setSeverity] = useState(40);
   const [learningRate, setLearningRate] = useState(0.1);
   const [decayRate, setDecayRate] = useState(0);
   const [iteration, setIteration] = useState(0);
-  const [selected, setSelected] = useState({ type: "node", id: "A" });
-  const [activePath, setActivePath] = useState([]);
-  const [algorithm, setAlgorithm] = useState(null);
-  const [history, setHistory] = useState(initialHistory);
+  const [selected, setSelected] = useState({ type: "node", id: DEFAULT_SOURCE_ID });
+  const [pathPreview, setPathPreview] = useState(null);
+  const [analysisReport, setAnalysisReport] = useState(null);
+  const [workflowStep, setWorkflowStep] = useState(WORKFLOW.baseline);
+  const referenceGraph = useMemo(
+    () => WeightedGraph.fromJSON(referenceGraphJson),
+    [referenceGraphJson],
+  );
+  const simulationView = useMemo(
+    () => buildSimulationView(graph, referenceGraph, source, target),
+    [graph, referenceGraph, source, target],
+  );
+  const metrics = simulationView.metrics;
+  const baselineRoute = simulationView.baselineRoute;
+  const [history, setHistory] = useState(() =>
+    initialHistory(
+      createPristineNetwork(18),
+      createPristineNetwork(18),
+      DEFAULT_SOURCE_ID,
+      DEFAULT_TARGET_ID,
+    ),
+  );
   const [events, setEvents] = useState([
     {
       id: 0,
@@ -79,18 +127,13 @@ export function Simulator() {
   const [undoStack, setUndoStack] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [adaptationCheckpoint, setAdaptationCheckpoint] = useState(null);
   const [notice, setNotice] = useState("");
-  const [phase, setPhase] = useState(PHASE.baseline);
+  const [damageMode, setDamageMode] = useState(false);
+  const phase = WORKFLOW_LABEL[workflowStep];
   const eventSeq = useRef(1);
-  const baselineGraph = useMemo(() => WeightedGraph.baseline(), []);
-  const baselineRoute = useMemo(
-    () => dijkstra(baselineGraph, source, target),
-    [baselineGraph, source, target],
-  );
-  const metrics = useMemo(
-    () => analyzeConnectivity(graph, source, target, baselineRoute.cost),
-    [graph, source, target, baselineRoute.cost],
-  );
+  const lastPlasticityRouteRef = useRef(null);
+  const hasTraumaPreset = Boolean(graph.getEdge("B-C")?.active);
   const allNodes = [...graph.nodes.values()];
   const allEdges = [...graph.edges.values()];
   const selectedNode = selected.type === "node" ? graph.getNode(selected.id) : null;
@@ -106,8 +149,7 @@ export function Simulator() {
 
   const record = useCallback(
     (nextGraph, nextIteration, stateName, title, detail, tone = "normal") => {
-      const base = dijkstra(WeightedGraph.baseline(), source, target);
-      const nextMetrics = analyzeConnectivity(nextGraph, source, target, base.cost);
+      const view = buildSimulationView(nextGraph, referenceGraph, source, target);
       setHistory((previous) => [
         ...previous,
         {
@@ -115,86 +157,150 @@ export function Simulator() {
           iteration: nextIteration,
           state: stateName,
           graph: nextGraph.toJSON(),
-          cost: nextMetrics.current.cost,
-          performance: nextMetrics.performance,
+          cost: view.metrics.current.cost,
+          performance: view.metrics.performance,
         },
       ]);
       pushEvent({ title, detail, tone });
     },
-    [pushEvent, source, target],
+    [pushEvent, referenceGraph, source, target],
   );
 
   const saveUndo = useCallback(() => {
     setUndoStack((previous) =>
-      [...previous, { graph: graph.toJSON(), iteration, activePath, history, events, phase }].slice(
-        -20,
-      ),
+      [
+        ...previous,
+        {
+          graph: graph.toJSON(),
+          referenceGraphJson,
+          networkSize,
+          iteration,
+          pathPreview,
+          history,
+          events,
+          workflowStep,
+          analysisReport,
+          adaptationCheckpoint,
+          source,
+          target,
+        },
+      ].slice(-20),
     );
-  }, [activePath, events, graph, history, iteration, phase]);
+  }, [
+    adaptationCheckpoint,
+    analysisReport,
+    events,
+    graph,
+    history,
+    iteration,
+    networkSize,
+    pathPreview,
+    referenceGraphJson,
+    source,
+    target,
+    workflowStep,
+  ]);
 
-  const reset = () => {
-    setGraph(WeightedGraph.baseline());
-    setSource("A");
-    setTarget("F");
+  const hydrateNetwork = useCallback((size, detail) => {
+    const pristine = createPristineNetwork(size);
+    const nextJson = pristine.toJSON();
+    setNetworkSize(size);
+    setReferenceGraphJson(nextJson);
+    setGraph(pristine.clone());
+    setSource(DEFAULT_SOURCE_ID);
+    setTarget(DEFAULT_TARGET_ID);
     setDamageType("node");
     setIteration(0);
-    setSelected({ type: "node", id: "A" });
-    setActivePath([]);
-    setAlgorithm(null);
-    setHistory(initialHistory());
-    setEvents([
-      {
-        id: eventSeq.current++,
-        title: "S0 · BASELINE NETWORK LOADED",
-        detail: "Simulation reset to the original synthetic dataset",
-        tone: "normal",
-      },
-    ]);
+    setSelected({ type: "node", id: DEFAULT_SOURCE_ID });
+    setPathPreview(null);
+    setAnalysisReport(null);
+    setAdaptationCheckpoint(null);
+    lastPlasticityRouteRef.current = null;
+    setHistory(initialHistory(pristine, pristine, DEFAULT_SOURCE_ID, DEFAULT_TARGET_ID));
     setUndoStack([]);
     setIsRunning(false);
     setIsPaused(false);
     setNotice("");
-    setPhase(PHASE.baseline);
+    setWorkflowStep(WORKFLOW.baseline);
+    setDamageMode(false);
+    setEvents([
+      {
+        id: eventSeq.current++,
+        title: "S0 · BASELINE NETWORK LOADED",
+        detail,
+        tone: "normal",
+      },
+    ]);
+  }, []);
+
+  const reset = () => {
+    const pristine = createPristineNetwork(networkSize);
+    hydrateNetwork(
+      networkSize,
+      `Simulation reset · ${networkSize} nodes · ${pristine.edges.size} weighted connections`,
+    );
   };
 
   const retarget = (which, value) => {
+    if (!canConfigureNetwork(workflowStep, busy)) return;
     if (which === "source") setSource(value);
     else setTarget(value);
-    setAlgorithm(null);
-    setActivePath([]);
-    setPhase(iteration > 0 ? PHASE.adapted : damaged ? PHASE.damage : PHASE.baseline);
+    setPathPreview(null);
+    setAnalysisReport(null);
   };
 
-  const runAlgorithm = (kind) => {
+  const analyseNetwork = () => {
+    if (!canAnalyse(workflowStep, graph, busy)) {
+      setNotice("Run analysis only after damage has been applied.");
+      return;
+    }
     try {
-      let result;
-      if (kind === "BFS") result = breadthFirstSearch(graph, source, target);
-      else if (kind === "DFS") result = { paths: depthFirstPaths(graph, source, target, 12) };
-      else result = dijkstra(graph, source, target);
-      setAlgorithm({ kind, result });
-      const found = kind === "DFS" ? result.paths.length > 0 : result.reachable;
-      if (kind !== "DFS" && result.reachable) setActivePath(result.path);
-      else if (kind === "DFS" && result.paths.length) setActivePath(result.paths[0]);
-      else setActivePath([]);
-      setNotice(result.error ?? "");
-      if (found && damaged && iteration === 0) setPhase(PHASE.recruited);
-      const detail =
-        kind === "DFS"
-          ? `${result.paths?.length ?? 0} simple path${result.paths?.length === 1 ? "" : "s"} found (limit 12)`
-          : result.reachable
-            ? `${result.path.join(" → ")}${kind === "DIJKSTRA" ? ` · cost ${result.cost.toFixed(4)}` : ` · ${result.edgeCount} edges`}`
-            : (result.error ?? "Target unreachable in the current graph");
-      pushEvent({
-        title: `${kind} · ${found ? "EXECUTED" : "NO PATH"}`,
-        detail,
-        tone: found ? "normal" : "damage",
-      });
+      validateGraphIntegrity(graph);
+      saveUndo();
+      const report = runDisruptionAnalysis(graph, referenceGraph, source, target);
+      setAnalysisReport(report);
+      setPathPreview(report.preview);
+      setNotice(report.disconnected ? report.headline : "");
+      setWorkflowStep(WORKFLOW.analysed);
+      record(
+        graph,
+        iteration,
+        WORKFLOW_LABEL[WORKFLOW.analysed],
+        report.disconnected ? "ANALYSIS · NETWORK DISCONNECTED" : "ANALYSIS · DISRUPTION SURVEYED",
+        `${report.headline} ${report.detail}`,
+        report.disconnected ? "damage" : "normal",
+      );
     } catch (error) {
       setNotice(error.message);
     }
   };
 
+  const evaluateResults = () => {
+    if (!canEvaluate(workflowStep, busy)) return;
+    saveUndo();
+    setWorkflowStep(WORKFLOW.evaluated);
+    setIsRunning(false);
+    setIsPaused(false);
+    const summary = metrics.reachable
+      ? `Current cost ${metrics.current.cost.toFixed(4)} vs baseline ${baselineRoute.cost.toFixed(4)} · performance proxy ${(metrics.performance * 100).toFixed(1)}%`
+      : "Target unreachable — compare structural metrics only.";
+    pushEvent({
+      title: "EVALUATION · STATE COMPARISON",
+      detail: summary,
+      tone: metrics.reachable ? "adapted" : "damage",
+    });
+    record(
+      graph,
+      iteration,
+      WORKFLOW_LABEL[WORKFLOW.evaluated],
+      "EVALUATION · BASELINE VS CURRENT",
+      summary,
+      "adapted",
+    );
+  };
+
   const applyDamage = () => {
+    if (!canApplyDamage(workflowStep, busy)) return;
     if (severity <= 0) {
       setNotice("Damage severity must be greater than 0%.");
       return;
@@ -203,17 +309,23 @@ export function Simulator() {
       const nextGraph = graph.clone();
       if (damageType === "edge") applyEdgeDamage(nextGraph, selectedId, severity);
       else applyNodeDamage(nextGraph, selectedId, severity);
+      validateGraphIntegrity(nextGraph);
       saveUndo();
       setGraph(nextGraph);
-      setAlgorithm(null);
-      setActivePath([]);
+      setPathPreview(null);
+      setAnalysisReport(null);
+      setAdaptationCheckpoint(null);
+      lastPlasticityRouteRef.current = null;
+      setIteration(0);
+      setIsRunning(false);
+      setIsPaused(false);
       setNotice("");
-      setPhase(PHASE.damage);
+      setWorkflowStep(WORKFLOW.damaged);
       const subject = damageType === "edge" ? `EDGE ${selectedId}` : `NODE ${selectedId}`;
       record(
         nextGraph,
-        iteration,
-        PHASE.damage,
+        0,
+        WORKFLOW_LABEL[WORKFLOW.damaged],
         `${subject} · ${severity}% DAMAGE APPLIED`,
         damageType === "edge"
           ? `Effective connection weight ${nextGraph.getEdge(selectedId).weight.toFixed(2)}`
@@ -226,30 +338,26 @@ export function Simulator() {
   };
 
   const restoreSelected = () => {
+    if (!canRestore(workflowStep, busy)) return;
     try {
       const nextGraph = graph.clone();
       if (damageType === "edge") restoreEdge(nextGraph, selectedId);
       else restoreNode(nextGraph, selectedId);
+      validateGraphIntegrity(nextGraph);
       saveUndo();
       setGraph(nextGraph);
-      setAlgorithm(null);
-      setActivePath([]);
+      setPathPreview(null);
+      setAnalysisReport(null);
       setNotice("");
-      setPhase(
-        networkHasDamage(nextGraph)
-          ? iteration > 0
-            ? PHASE.adapted
-            : PHASE.damage
-          : iteration > 0
-            ? PHASE.adapted
-            : PHASE.baseline,
-      );
+      setWorkflowStep(resolveWorkflowAfterRestore(nextGraph, iteration));
       record(
         nextGraph,
         iteration,
         "NETWORK RESTORED",
         `${damageType.toUpperCase()} ${selectedId} · RESTORED`,
-        "Original synthetic connection and capacity preserved",
+        networkHasDamage(nextGraph)
+          ? "Damage remains · run analysis again before adaptation"
+          : "Baseline connectivity restored",
         "normal",
       );
     } catch (error) {
@@ -258,6 +366,7 @@ export function Simulator() {
   };
 
   const traumaPreset = () => {
+    if (!canApplyDamage(workflowStep, busy) || !hasTraumaPreset) return;
     const nextGraph = graph.clone();
     try {
       const edge = nextGraph.getEdge("B-C");
@@ -272,114 +381,208 @@ export function Simulator() {
       return;
     }
     saveUndo();
+    validateGraphIntegrity(nextGraph);
     setGraph(nextGraph);
     setSelected({ type: "edge", id: "B-C" });
     setDamageType("edge");
-    setAlgorithm(null);
+    setPathPreview(null);
+    setAnalysisReport(null);
+    setAdaptationCheckpoint(null);
+    lastPlasticityRouteRef.current = null;
+    setIteration(0);
+    setIsRunning(false);
     setNotice("");
-    const route = dijkstra(nextGraph, source, target);
-    const bfs = breadthFirstSearch(nextGraph, source, target);
-    setActivePath(route.reachable ? route.path : []);
-    setAlgorithm({ kind: "DIJKSTRA", result: route, alsoBfs: bfs });
-    setPhase(route.reachable ? PHASE.recruited : PHASE.damage);
+    setWorkflowStep(WORKFLOW.damaged);
     record(
       nextGraph,
-      iteration,
-      PHASE.damage,
+      0,
+      WORKFLOW_LABEL[WORKFLOW.damaged],
       "PRESET · B-C DISRUPTED",
-      route.reachable
-        ? `BFS: ${bfs.path.join(" → ")} · Dijkstra: ${route.path.join(" → ")}`
-        : "The selected target is unreachable",
+      "Run network analysis to survey rerouting before adaptation",
       "damage",
     );
-    if (route.reachable) {
+  };
+
+  const runPlasticityTick = useCallback(() => {
+    if (isPaused || iteration >= MAX_ITERATIONS) return;
+    const nextGraph = graph.clone();
+    const step = adaptationStep(nextGraph, source, target, learningRate, decayRate, iteration + 1, {
+      previousEdgeIds: lastPlasticityRouteRef.current,
+    });
+    if (step.pathChanged) {
       pushEvent({
-        title: "BFS + DIJKSTRA · EXECUTED",
-        detail: `${route.path.join(" → ")} · cost ${route.cost.toFixed(4)}`,
+        title: "PLASTICITY · PATHWAY RESELECTED",
+        detail: formatPathwaySwitch(lastPlasticityRouteRef.current, step.edgeIds, step.path),
         tone: "normal",
       });
     }
-  };
+    lastPlasticityRouteRef.current = step.edgeIds;
+    if (!step.reachable) {
+      setNotice(step.error ?? "Target became unreachable during plasticity simulation.");
+      setIsRunning(false);
+      setWorkflowStep(WORKFLOW.analysed);
+      pushEvent({
+        title: "PLASTICITY · STOP (DISCONNECTED)",
+        detail: step.error ?? "Synthetic model halted — not biological recovery.",
+        tone: "damage",
+      });
+      return;
+    }
+    validateGraphIntegrity(nextGraph);
+    const nextIteration = iteration + 1;
+    setGraph(nextGraph);
+    setIteration(nextIteration);
+    const changed = step.changes
+      .filter((change) => change.activity > 0)
+      .map((change) => `${change.edgeId} ${change.previous.toFixed(3)}→${change.weight.toFixed(3)}`)
+      .join(" · ");
+    record(
+      nextGraph,
+      nextIteration,
+      WORKFLOW_LABEL[WORKFLOW.adapting],
+      `PLASTICITY · ITERATION ${nextIteration}/${MAX_ITERATIONS}`,
+      changed
+        ? `${changed} · path cost ${step.cost.toFixed(4)}`
+        : `No pathway weight change · cost ${step.cost.toFixed(4)}`,
+      "adapted",
+    );
+    const stop = plasticityStopReason(step, nextIteration, MAX_ITERATIONS);
+    if (stop.stopped) {
+      setIsRunning(false);
+      setWorkflowStep(WORKFLOW.evaluated);
+      setNotice(stop.message);
+      pushEvent({
+        title: `PLASTICITY · STOP (${stop.reason.toUpperCase()})`,
+        detail: `${stop.message} Synthetic computational model only.`,
+        tone: stop.reason === PLASTICITY_STOP_REASON.unreachable ? "damage" : "adapted",
+      });
+    }
+  }, [decayRate, graph, isPaused, iteration, learningRate, pushEvent, record, source, target]);
 
-  const runAdaptation = useCallback(
-    (steps, fromTimer = false) => {
-      if (iteration >= MAX_ITERATIONS || (isPaused && fromTimer)) {
-        setIsRunning(false);
-        return;
-      }
-      const nextGraph = graph.clone();
-      let nextIteration = iteration;
-      let last = null;
-      for (let count = 0; count < steps && nextIteration < MAX_ITERATIONS; count += 1) {
-        last = adaptationStep(
-          nextGraph,
-          source,
-          target,
-          learningRate,
-          decayRate,
-          nextIteration + 1,
-        );
-        if (!last.reachable) {
-          setNotice(last.error);
-          setAlgorithm({ kind: "DIJKSTRA", result: dijkstra(nextGraph, source, target) });
-          setIsRunning(false);
-          return;
-        }
-        nextIteration += 1;
-      }
-      if (!last) return;
-      if (!fromTimer) saveUndo();
-      setGraph(nextGraph);
-      setIteration(nextIteration);
-      setActivePath(last.path);
-      setAlgorithm({ kind: "DIJKSTRA", result: dijkstra(nextGraph, source, target) });
-      setNotice("");
-      setPhase(PHASE.adapted);
-      const changed = last.changes
-        .map(
-          (change) => `${change.edgeId} ${change.previous.toFixed(3)}→${change.weight.toFixed(3)}`,
-        )
-        .join(" · ");
+  const commitAnalysis = useCallback(
+    (report, { recordEvent = true } = {}) => {
+      setAnalysisReport(report);
+      setPathPreview(report.preview);
+      setWorkflowStep(WORKFLOW.analysed);
+      if (!recordEvent) return report;
       record(
-        nextGraph,
-        nextIteration,
-        PHASE.adapted,
-        `ADAPTATION · ITERATION ${nextIteration}/${MAX_ITERATIONS}`,
-        changed || "No active pathway weights changed",
-        "adapted",
+        graph,
+        iteration,
+        WORKFLOW_LABEL[WORKFLOW.analysed],
+        report.disconnected ? "ANALYSIS · NETWORK DISCONNECTED" : "ANALYSIS · DISRUPTION SURVEYED",
+        `${report.headline} ${report.detail}`,
+        report.disconnected ? "damage" : "normal",
       );
-      if (nextIteration >= MAX_ITERATIONS) setIsRunning(false);
+      return report;
     },
-    [decayRate, graph, isPaused, iteration, learningRate, record, saveUndo, source, target],
+    [graph, iteration, record],
   );
 
-  const runAll = () => {
-    if (iteration >= MAX_ITERATIONS) return;
-    if (isRunning) setIsPaused((previous) => !previous);
-    else {
+  const simulateNeuroplasticity = () => {
+    if (isRunning) return;
+    try {
+      validateGraphIntegrity(graph);
+      let report = analysisReport;
+      if (workflowStep === WORKFLOW.damaged || !report) {
+        saveUndo();
+        report = runDisruptionAnalysis(graph, referenceGraph, source, target);
+        commitAnalysis(report);
+      }
+      const prep = preparePlasticityRun(graph, referenceGraph, source, target);
+      if (!prep.ready) {
+        setNotice(prep.message);
+        return;
+      }
       saveUndo();
-      setIsPaused(false);
+      setAdaptationCheckpoint({
+        graphJson: graph.toJSON(),
+        analysisReport: report,
+        iteration: 0,
+      });
+      lastPlasticityRouteRef.current = prep.route.edgeIds;
+      setPathPreview(null);
+      setIteration(0);
+      setNotice("");
+      setWorkflowStep(WORKFLOW.adapting);
       setIsRunning(true);
+      setIsPaused(false);
+      pushEvent({
+        title: "PLASTICITY · SIMULATION STARTED",
+        detail: `${prep.message} Policy: minimum-cost Dijkstra pathway each iteration.`,
+        tone: "adapted",
+      });
+    } catch (error) {
+      setNotice(error.message);
+      setIsRunning(false);
     }
+  };
+
+  const togglePlasticityPause = () => {
+    if (!isRunning) return;
+    setIsPaused((previous) => {
+      const resuming = previous;
+      pushEvent({
+        title: resuming ? "PLASTICITY · RESUMED" : "PLASTICITY · PAUSED",
+        detail: resuming
+          ? "Continuing iteration-by-iteration weight updates."
+          : "Paused; graph state preserved.",
+        tone: "adapted",
+      });
+      return !previous;
+    });
+  };
+
+  const resetAdaptation = () => {
+    if (!adaptationCheckpoint) {
+      setNotice("No adaptation checkpoint saved.");
+      return;
+    }
+    if (isRunning && !isPaused) {
+      setNotice("Pause the plasticity run before resetting adaptation.");
+      return;
+    }
+    saveUndo();
+    const restored = new WeightedGraph(adaptationCheckpoint.graphJson);
+    validateGraphIntegrity(restored);
+    setGraph(restored);
+    setIteration(0);
+    setAnalysisReport(adaptationCheckpoint.analysisReport);
+    setWorkflowStep(WORKFLOW.analysed);
+    lastPlasticityRouteRef.current = null;
+    setAdaptationCheckpoint(null);
+    setNotice("");
+    pushEvent({
+      title: "PLASTICITY · RESET",
+      detail: "Restored pre-adaptation damaged state (synthetic model checkpoint).",
+      tone: "normal",
+    });
   };
 
   useEffect(() => {
     if (!isRunning || isPaused) return undefined;
-    const timer = window.setInterval(() => runAdaptation(1, true), 280);
+    const timer = window.setInterval(runPlasticityTick, ADAPTATION_TICK_MS);
     return () => window.clearInterval(timer);
-  }, [isPaused, isRunning, runAdaptation]);
+  }, [isPaused, isRunning, runPlasticityTick]);
 
   const undo = () => {
     const previous = undoStack.at(-1);
     if (!previous) return;
-    setGraph(new WeightedGraph(previous.graph));
+    const restored = new WeightedGraph(previous.graph);
+    validateGraphIntegrity(restored);
+    setGraph(restored);
+    setReferenceGraphJson(previous.referenceGraphJson ?? referenceGraphJson);
+    setNetworkSize(previous.networkSize ?? networkSize);
+    setSource(previous.source ?? source);
+    setTarget(previous.target ?? target);
     setIteration(previous.iteration);
-    setActivePath(previous.activePath);
+    setPathPreview(previous.pathPreview ?? null);
     setHistory(previous.history);
     setEvents(previous.events);
-    setPhase(previous.phase ?? PHASE.baseline);
+    setWorkflowStep(previous.workflowStep ?? WORKFLOW.baseline);
+    setAnalysisReport(previous.analysisReport ?? null);
+    setAdaptationCheckpoint(previous.adaptationCheckpoint ?? null);
+    lastPlasticityRouteRef.current = null;
     setUndoStack((stack) => stack.slice(0, -1));
-    setAlgorithm(null);
     setNotice("");
     setIsRunning(false);
     setIsPaused(false);
@@ -388,33 +591,86 @@ export function Simulator() {
   const onSelect = useCallback((item) => {
     setSelected(item);
     setDamageType(item.type === "edge" ? "edge" : "node");
+    if (!busy) setDamageMode(true);
     setNotice("");
-  }, []);
+  }, [busy]);
 
   const chartHistory = useMemo(
     () =>
       history.map((point) => {
         const snapshot = new WeightedGraph(point.graph);
-        const current = analyzeConnectivity(snapshot, source, target, baselineRoute.cost);
+        const view = buildSimulationView(snapshot, referenceGraph, source, target);
         return {
           index: point.index,
           iteration: point.iteration,
-          cost: current.current.reachable ? current.current.cost : null,
-          performance: current.performance,
+          cost: view.metrics.current.reachable ? view.metrics.current.cost : null,
+          performance: view.metrics.performance,
           edges: Object.fromEntries(
             [...snapshot.edges.values()].map((edge) => [edge.id, edge.weight]),
           ),
         };
       }),
-    [baselineRoute.cost, history, source, target],
+    [history, referenceGraph, source, target],
   );
-  const routeEdgeIds = metrics.current.edgeIds?.length
-    ? metrics.current.edgeIds
-    : (baselineRoute.edgeIds ?? []);
+  const chartRouteEdgeIds = useMemo(() => {
+    const ids = new Set(simulationView.paths.current.edgeIds);
+    for (const point of history) {
+      const snapshot = new WeightedGraph(point.graph);
+      const view = buildSimulationView(snapshot, referenceGraph, source, target);
+      for (const id of view.paths.current.edgeIds) ids.add(id);
+    }
+    return [...ids].sort();
+  }, [history, referenceGraph, simulationView.paths.current.edgeIds, source, target]);
+  const routeEdgeIds = simulationView.paths.current.edgeIds;
+  const highlightPath = simulationView.paths.current.path;
+  const baselineEdgeIds = simulationView.paths.baseline.edgeIds;
   const performancePercent = metrics.performance * 100;
   const strengthenedEdges = allEdges.filter(
     (edge) => edge.weight > edge.initialWeight + 1e-9,
   ).length;
+  const adaptAllowed =
+    canAdapt(workflowStep, graph, referenceGraph, source, target, iteration, MAX_ITERATIONS) &&
+    !busy;
+  const plasticityStartAllowed = !isRunning && damaged && workflowStep !== WORKFLOW.baseline;
+  const analysisAllowed = canAnalyse(workflowStep, graph, busy);
+  const damageAllowed = canApplyDamage(workflowStep, busy);
+  const restoreAllowed = canRestore(workflowStep, busy);
+  const networkConfigAllowed = canConfigureNetwork(workflowStep, busy);
+  const evaluateAllowed = canEvaluate(workflowStep, busy);
+  const guidance = getWorkflowGuidance(workflowStep, {
+    reachable: metrics.reachable,
+    alternativeOk: analysisReport?.alternativeOk ?? false,
+    damaged,
+    iteration,
+    maxIterations: MAX_ITERATIONS,
+  });
+  const experienceStage = resolveExperienceStage({
+    workflowStep,
+    damaged,
+    isRunning,
+    isPaused,
+    iteration,
+  });
+  const damageCounts = countDamage(graph);
+  const simulationStatus = isRunning
+    ? isPaused
+      ? "Paused"
+      : `Adapting · iteration ${iteration}/${MAX_ITERATIONS}`
+    : workflowStep === WORKFLOW.evaluated
+      ? "Adaptation complete"
+      : damaged
+        ? "Damage applied · ready to simulate"
+        : "Baseline network";
+  const analyseAndSimulate = () => simulateNeuroplasticity();
+  const primaryDamageMode = () => {
+    if (busy) return;
+    setDamageMode(true);
+    setNotice("Click a connection or region on the graph, set severity, then apply damage.");
+  };
+  const cancelDamageMode = () => {
+    setDamageMode(false);
+    setNotice("");
+  };
 
   return (
     <main className="app-shell">
@@ -436,23 +692,107 @@ export function Simulator() {
         <div className="top-actions">
           <div className="status-indicator">
             <span className={`status-dot ${isRunning && !isPaused ? "running" : ""}`} />
-            {isRunning ? (isPaused ? "PAUSED" : "RUNNING") : "IDLE"}
+            {isRunning
+              ? isPaused
+                ? "PAUSED"
+                : "PLASTICITY RUN"
+              : workflowStep === WORKFLOW.adapting
+                ? "ADAPTING"
+                : "IDLE"}
           </div>
-          <span className="state-chip">{phase}</span>
+          <span className="state-chip experience-chip">{EXPERIENCE_LABEL[experienceStage]}</span>
+          <span className="state-chip state-chip-technical" title="Internal workflow state">
+            {phase}
+          </span>
           <Button size="sm" variant="outline" onClick={reset} aria-label="Reset simulation">
-            <RotateCcw size={14} /> RESET
+            <RotateCcw size={14} /> RESET SIMULATION
           </Button>
         </div>
       </header>
 
       <div className="workspace-layout">
         <aside className="left-rail">
+          <section className="mission-control" aria-live="polite">
+            <span className="mission-stage">{EXPERIENCE_LABEL[experienceStage]}</span>
+            <strong className="mission-title">{guidance.title}</strong>
+            <p className="mission-detail">{guidance.detail}</p>
+            <dl className="mission-stats">
+              <div>
+                <dt>Damaged</dt>
+                <dd>
+                  {damageCounts.damagedNodes} nodes · {damageCounts.damagedEdges} connections
+                </dd>
+              </div>
+              <div>
+                <dt>Active route</dt>
+                <dd>
+                  {metrics.current.reachable ? metrics.current.path.join(" → ") : "—"}
+                </dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>{simulationStatus}</dd>
+              </div>
+            </dl>
+            <div className="mission-primary">
+              {experienceStage === EXPERIENCE_STAGE.baseline && (
+                <Button
+                  variant="warning"
+                  className="action-button mission-cta"
+                  onClick={primaryDamageMode}
+                  disabled={busy}
+                >
+                  <ShieldAlert size={14} /> SELECT DAMAGE
+                </Button>
+              )}
+              {experienceStage === EXPERIENCE_STAGE.selectDamage && !isRunning && (
+                <Button
+                  variant="primary"
+                  className="action-button mission-cta"
+                  onClick={analyseAndSimulate}
+                  disabled={busy || !damaged}
+                >
+                  <Activity size={14} /> ANALYSE &amp; SIMULATE
+                </Button>
+              )}
+              {experienceStage === EXPERIENCE_STAGE.simulate && isRunning && (
+                <Button
+                  variant="primary"
+                  className="action-button mission-cta"
+                  onClick={togglePlasticityPause}
+                  aria-label={isPaused ? "Resume plasticity simulation" : "Pause plasticity simulation"}
+                >
+                  {isPaused ? (
+                    <>
+                      <CirclePlay size={13} /> RESUME
+                    </>
+                  ) : (
+                    "PAUSE"
+                  )}
+                </Button>
+              )}
+              {experienceStage === EXPERIENCE_STAGE.result && (
+                <Button
+                  variant="primary"
+                  className="action-button mission-cta"
+                  onClick={evaluateResults}
+                  disabled={!evaluateAllowed}
+                >
+                  <ScanEye size={14} /> COMPARE RESULTS
+                </Button>
+              )}
+            </div>
+            <p className="mission-legend-copy">
+              Green connections are alternative pathways strengthened by the simulation. Thickness and
+              colour intensity reflect modelled edge weights (synthetic model, not biological recovery).
+            </p>
+          </section>
           <section className="control-section">
             <SectionTitle icon={<GitBranch size={14} />} title="NETWORK" index="01" />
             <Field label="SOURCE NODE">
               <select
                 value={source}
-                disabled={busy}
+                disabled={busy || !networkConfigAllowed}
                 onChange={(event) => retarget("source", event.target.value)}
                 aria-label="Source node"
               >
@@ -466,7 +806,7 @@ export function Simulator() {
             <Field label="TARGET NODE">
               <select
                 value={target}
-                disabled={busy}
+                disabled={busy || !networkConfigAllowed}
                 onChange={(event) => retarget("target", event.target.value)}
                 aria-label="Target node"
               >
@@ -477,6 +817,31 @@ export function Simulator() {
                 ))}
               </select>
             </Field>
+            <div className="range-row">
+              <label htmlFor="network-size">NETWORK SIZE</label>
+              <output htmlFor="network-size" className="range-value">
+                {networkSize}
+              </output>
+            </div>
+            <input
+              id="network-size"
+              className="range-control"
+              type="range"
+              min={MIN_NETWORK_NODES}
+              max={MAX_NETWORK_NODES}
+              step="1"
+              value={networkSize}
+              disabled={busy || !networkConfigAllowed}
+              onChange={(event) => {
+                const size = Number(event.target.value);
+                if (size === networkSize) return;
+                const pristine = createPristineNetwork(size);
+                hydrateNetwork(
+                  size,
+                  `${size} nodes · ${pristine.edges.size} weighted connections · regenerated dataset`,
+                );
+              }}
+            />
             <div className="button-stack">
               <Button variant="outline" className="action-button" onClick={reset}>
                 <RotateCcw size={14} /> LOAD / RESET BASELINE
@@ -485,15 +850,20 @@ export function Simulator() {
                 variant="warning"
                 className="action-button"
                 onClick={traumaPreset}
-                disabled={busy}
+                disabled={busy || !hasTraumaPreset || !damageAllowed}
               >
                 <ShieldAlert size={14} /> SIMULATE TRAUMA: B-C
               </Button>
             </div>
           </section>
 
-          <section className="control-section">
+          <section className={`control-section ${damageMode ? "damage-mode-active" : ""}`}>
             <SectionTitle icon={<ShieldAlert size={14} />} title="DAMAGE / RESTORE" index="02" />
+            {damageMode && (
+              <p className="section-help damage-mode-banner">
+                Selection mode — click the graph, adjust severity, then damage the selected component.
+              </p>
+            )}
             <Field label="ELEMENT TYPE">
               <select
                 value={damageType}
@@ -554,39 +924,58 @@ export function Simulator() {
               <Button
                 variant="destructive"
                 className="action-button"
-                onClick={applyDamage}
+                onClick={() => {
+                  applyDamage();
+                  setDamageMode(false);
+                }}
+                disabled={busy || !damageAllowed}
+              >
+                <ShieldAlert size={14} /> DAMAGE SELECTED
+              </Button>
+              <Button
+                variant="outline"
+                className="action-button"
+                onClick={cancelDamageMode}
                 disabled={busy}
               >
-                <ShieldAlert size={14} /> APPLY DAMAGE
+                CANCEL
               </Button>
               <Button
                 variant="outline"
                 className="action-button"
                 onClick={restoreSelected}
-                disabled={busy}
+                disabled={busy || !restoreAllowed}
               >
                 <RotateCcw size={14} /> RESTORE SELECTED
               </Button>
             </div>
           </section>
 
-          <section className="control-section">
-            <SectionTitle icon={<ScanEye size={14} />} title="ALGORITHMS" index="03" />
-            <div className="algorithm-buttons">
-              <Button variant="outline" onClick={() => runAlgorithm("BFS")} disabled={busy}>
-                BFS
-              </Button>
-              <Button variant="outline" onClick={() => runAlgorithm("DFS")} disabled={busy}>
-                DFS
-              </Button>
-              <Button variant="outline" onClick={() => runAlgorithm("DIJKSTRA")} disabled={busy}>
-                DIJKSTRA
-              </Button>
-            </div>
-            {algorithm && <AlgorithmResult algorithm={algorithm} />}
-          </section>
-
-          <section className="control-section plasticity-section">
+          <details className="control-section advanced-simulation">
+            <summary>
+              <SectionTitle
+                as="span"
+                icon={<ScanEye size={14} />}
+                title="ADVANCED SIMULATION"
+                index="03"
+              />
+            </summary>
+            <p className="section-help">
+              Technical routing survey (Dijkstra, BFS, bounded DFS). The primary{" "}
+              <strong>ANALYSE &amp; SIMULATE</strong> action runs this automatically.
+            </p>
+            <Button
+              variant="outline"
+              className="action-button"
+              onClick={analyseNetwork}
+              disabled={!analysisAllowed}
+            >
+              <ScanEye size={14} /> ANALYSE NETWORK
+            </Button>
+            {analysisReport && (
+              <DisruptionAnalysisReport report={analysisReport} source={source} target={target} />
+            )}
+            <div className="plasticity-section-inner">
             <SectionTitle icon={<Activity size={14} />} title="PLASTICITY" index="04" />
             <RangeControl
               id="learning-rate"
@@ -596,6 +985,7 @@ export function Simulator() {
               max={0.5}
               step={0.01}
               formatter={(value) => value.toFixed(2)}
+              disabled={!adaptAllowed && !isRunning}
             />
             <RangeControl
               id="decay-rate"
@@ -605,60 +995,83 @@ export function Simulator() {
               max={0.2}
               step={0.01}
               formatter={(value) => value.toFixed(2)}
+              disabled={!adaptAllowed && !isRunning}
             />
+            {damaged && (
+              <p className="section-help plasticity-policy">
+                Plasticity requires a qualifying alternative pathway. Partial damage that leaves the
+                same selected pathway intact may increase its traversal cost without triggering
+                adaptation. Synthetic computational model only — not biological recovery.
+              </p>
+            )}
+            {!adaptAllowed && workflowStep === WORKFLOW.analysed && (
+              <p className="section-help damage-tone">
+                {analysisReport?.disconnected
+                  ? "Adaptation blocked: target unreachable."
+                  : "Adaptation blocked: no qualifying alternative pathway under the current rules."}
+              </p>
+            )}
             <div className="iteration-label">
               <span>ITERATION</span>
               <strong>
                 {String(iteration).padStart(2, "0")} <small>/ {MAX_ITERATIONS}</small>
               </strong>
             </div>
-            <div className="iteration-buttons">
+            <p className="section-help">
+              Synthetic activity-dependent plasticity on the live minimum-cost pathway (not
+              biological recovery).
+            </p>
+            <div className="iteration-buttons plasticity-actions">
               <Button
-                size="sm"
-                variant="outline"
-                onClick={() => runAdaptation(1)}
-                disabled={iteration >= MAX_ITERATIONS || isRunning}
-              >
-                + 1
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => runAdaptation(5)}
-                disabled={iteration >= MAX_ITERATIONS || isRunning}
-              >
-                + 5
-              </Button>
-              <Button
-                size="sm"
+                className="action-button"
                 variant="primary"
-                onClick={runAll}
-                disabled={iteration >= MAX_ITERATIONS}
+                onClick={simulateNeuroplasticity}
+                disabled={!plasticityStartAllowed}
               >
-                {isRunning ? (
-                  isPaused ? (
-                    <>
-                      <CirclePlay size={13} /> RESUME
-                    </>
-                  ) : (
-                    "PAUSE"
-                  )
+                <Activity size={14} /> SIMULATE NEUROPLASTICITY
+              </Button>
+              {!isRunning && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={togglePlasticityPause}
+                disabled={!isRunning}
+              >
+                {isPaused ? (
+                  <>
+                    <CirclePlay size={13} /> RESUME
+                  </>
                 ) : (
-                  "RUN ALL"
+                  "PAUSE"
                 )}
               </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={resetAdaptation}
+                disabled={!adaptationCheckpoint || (isRunning && !isPaused)}
+                aria-label="Reset adaptation"
+              >
+                <RotateCcw size={14} /> RESET ADAPTATION
+              </Button>
             </div>
+            <p className="section-help iteration-limit-note">
+              Progress counts adaptation iterations ({iteration}/{MAX_ITERATIONS}). Stopping at the limit
+              is not the same as biological convergence.
+            </p>
             <div
               className="progress-track"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={MAX_ITERATIONS}
               aria-valuenow={iteration}
-              aria-label={`Adaptation progress ${iteration} of ${MAX_ITERATIONS}`}
+              aria-label={`Adaptation progress ${iteration} of ${MAX_ITERATIONS} iterations`}
             >
               <span style={{ width: `${(iteration / MAX_ITERATIONS) * 100}%` }} />
             </div>
-          </section>
+            </div>
+          </details>
         </aside>
 
         <section className="graph-workspace">
@@ -685,36 +1098,37 @@ export function Simulator() {
               graph={graph}
               source={source}
               target={target}
-              path={activePath}
               selected={selected}
               onSelect={onSelect}
+              layoutKey={networkSize}
+              currentEdgeIds={
+                workflowStep === WORKFLOW.adapting ||
+                workflowStep === WORKFLOW.evaluated ||
+                isRunning
+                  ? routeEdgeIds
+                  : []
+              }
+              visualOptions={{
+                workflowStep,
+                iteration,
+                maxIterations: MAX_ITERATIONS,
+                isRunning,
+              }}
             />
-            <div className="graph-legend">
+            <div className="graph-legend graph-legend-experience">
               <span>
-                <i className="legend-node source-legend" /> SOURCE
+                <i className="legend-swatch legend-grey" /> Grey · original connection
               </span>
               <span>
-                <i className="legend-node target-legend" /> TARGET
+                <i className="legend-swatch legend-red" /> Red · damaged connection
               </span>
               <span>
-                <i className="legend-node silent-legend" /> LOW ACTIVITY
+                <i className="legend-swatch legend-green-soft" /> Light green · recruited pathway
               </span>
               <span>
-                <i className="legend-line" /> ACTIVE
+                <i className="legend-swatch legend-green-strong" /> Bold green · strengthened pathway
               </span>
-              <span>
-                <i className="legend-line strengthened-legend" /> STRENGTHENED
-              </span>
-              <span>
-                <i className="legend-line recovery-legend" /> RECOVERING
-              </span>
-              <span>
-                <i className="legend-line disrupted-legend" /> DAMAGED
-              </span>
-              <span>
-                <i className="legend-line route-legend" /> CURRENT PATH
-              </span>
-              <span className="legend-hint">ARROWS MOVE SELECTION</span>
+              <span className="legend-hint">CLICK GRAPH TO SELECT · ARROWS MOVE SELECTION</span>
             </div>
           </div>
           {notice && (
@@ -759,8 +1173,8 @@ export function Simulator() {
                 <InspectorValue label="DAMAGE" value={`${selectedEdge.damageSeverity}%`} />
                 <InspectorValue
                   label="USAGE / STATUS"
-                  value={`${selectedEdge.usageCount} · ${selectedEdge.active && selectedEdge.weight > 0 ? "ACTIVE" : "DISRUPTED"}`}
-                  tone={selectedEdge.active && selectedEdge.weight > 0 ? "normal" : "damage"}
+                  value={`${selectedEdge.usageCount} · ${isEdgeVisuallyTraversable(graph, selectedEdge) ? "ACTIVE" : "DISRUPTED"}`}
+                  tone={isEdgeVisuallyTraversable(graph, selectedEdge) ? "normal" : "damage"}
                 />
               </div>
             ) : (
@@ -908,7 +1322,10 @@ export function Simulator() {
             </div>
           </section>
 
-          <details className="results-section state-comparison">
+          <details
+            className="results-section state-comparison"
+            open={workflowStep === WORKFLOW.evaluated}
+          >
             <summary>
               <SectionTitle
                 as="h3"
@@ -917,6 +1334,14 @@ export function Simulator() {
                 index="08"
               />
             </summary>
+            <Button
+              variant="outline"
+              className="action-button evaluate-button"
+              onClick={evaluateResults}
+              disabled={!evaluateAllowed}
+            >
+              <ScanEye size={14} /> COMPARE RESULTS
+            </Button>
             <div className="comparison-row">
               <div>
                 <span>BASELINE</span>
@@ -939,12 +1364,50 @@ export function Simulator() {
               </div>
             </div>
             <div className="state-markers">
-              <span className="state-done">S0 · BASELINE</span>
-              <span className={damaged ? "state-done" : "state-pending"}>S1 · DAMAGED</span>
-              <span className={activePath.length || iteration > 0 ? "state-done" : "state-pending"}>
-                S2 · RECRUITED
+              <span
+                className={
+                  workflowStep === WORKFLOW.baseline && !damaged ? "state-done" : "state-done"
+                }
+              >
+                S0 · BASELINE
               </span>
-              <span className={iteration ? "state-done" : "state-pending"}>S3 · ADAPTED</span>
+              <span
+                className={
+                  [
+                    WORKFLOW.damaged,
+                    WORKFLOW.analysed,
+                    WORKFLOW.adapting,
+                    WORKFLOW.evaluated,
+                  ].includes(workflowStep) && damaged
+                    ? "state-done"
+                    : "state-pending"
+                }
+              >
+                S1 · DAMAGED
+              </span>
+              <span
+                className={
+                  [WORKFLOW.analysed, WORKFLOW.adapting, WORKFLOW.evaluated].includes(workflowStep)
+                    ? "state-done"
+                    : "state-pending"
+                }
+              >
+                S2 · ANALYSED
+              </span>
+              <span
+                className={
+                  workflowStep === WORKFLOW.adapting || iteration > 0
+                    ? "state-done"
+                    : "state-pending"
+                }
+              >
+                S3 · ADAPTING
+              </span>
+              <span
+                className={workflowStep === WORKFLOW.evaluated ? "state-done" : "state-pending"}
+              >
+                S4 · EVALUATED
+              </span>
             </div>
           </details>
         </aside>
@@ -962,7 +1425,7 @@ export function Simulator() {
         </div>
         <div className="history-layout">
           <div className="history-charts">
-            <HistoryCharts history={chartHistory} edgeIds={routeEdgeIds} />
+            <HistoryCharts history={chartHistory} edgeIds={chartRouteEdgeIds} />
           </div>
           <div className="event-panel">
             <div className="event-heading">
@@ -971,7 +1434,7 @@ export function Simulator() {
                 variant="ghost"
                 size="icon"
                 onClick={undo}
-                disabled={!undoStack.length}
+                disabled={!undoStack.length || busy}
                 aria-label="Undo most recent change"
                 title="Undo most recent change"
               >
@@ -1060,7 +1523,7 @@ function Field({ label, children }) {
   );
 }
 
-function RangeControl({ id, label, value, onChange, max, step, formatter }) {
+function RangeControl({ id, label, value, onChange, max, step, formatter, disabled = false }) {
   return (
     <div className="range-control-group">
       <div className="range-row">
@@ -1077,6 +1540,7 @@ function RangeControl({ id, label, value, onChange, max, step, formatter }) {
         max={max}
         step={step}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
       />
     </div>
@@ -1101,37 +1565,31 @@ function InspectorValue({ label, value, tone }) {
   );
 }
 
-function AlgorithmResult({ algorithm }) {
-  if (algorithm.kind === "DFS") {
-    return (
-      <div className="algorithm-result">
-        <div className="result-label">SIMPLE ROUTES · MAX 12</div>
-        {algorithm.result.paths.length ? (
-          algorithm.result.paths.map((path, index) => (
-            <div className="result-path" key={`${index}-${path.join("-")}`}>
-              {String(index + 1).padStart(2, "0")} <span>{path.join(" → ")}</span>
-            </div>
-          ))
-        ) : (
-          <div className="result-empty">NO PATH FOUND</div>
-        )}
-      </div>
-    );
-  }
-  const { result } = algorithm;
+function DisruptionAnalysisReport({ report, source, target }) {
   return (
-    <div className="algorithm-result">
-      <div className="result-label">{algorithm.kind} RESULT</div>
-      {result.reachable ? (
-        <div className="result-path">
-          <span>{result.path.join(" → ")}</span>
-          {algorithm.kind === "DIJKSTRA" && <b>{result.cost.toFixed(4)}</b>}
-        </div>
+    <div className="algorithm-result analysis-report">
+      <div className="result-label">
+        ANALYSIS · {source} → {target}
+      </div>
+      <p className="result-subtext">{report.headline}</p>
+      {report.disconnected ? (
+        <div className="result-empty">{report.detail}</div>
       ) : (
-        <div className="result-empty">{result.error ?? "NO PATH FOUND"}</div>
-      )}
-      {algorithm.alsoBfs && (
-        <div className="result-subtext">BFS · {algorithm.alsoBfs.edgeCount} edges</div>
+        <>
+          <div className="result-path">
+            <span>{report.currentPath.join(" → ")}</span>
+            <b>{Number.isFinite(report.cost) ? report.cost.toFixed(4) : "∞"}</b>
+          </div>
+          {report.preview && (
+            <div className="result-subtext">
+              PREVIEW ALT · {report.preview.path.join(" → ")} ({report.preview.kind})
+            </div>
+          )}
+          <div className="result-subtext">
+            BFS {report.bfs.reachable ? `${report.bfs.edgeCount} hops` : "unreachable"} · DFS{" "}
+            {report.dfsPaths.length} simple route{report.dfsPaths.length === 1 ? "" : "s"}
+          </div>
+        </>
       )}
     </div>
   );

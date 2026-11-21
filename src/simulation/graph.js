@@ -136,11 +136,10 @@ export class WeightedGraph {
     const neighbors = [];
     for (const edgeId of this.adjacency.get(id) ?? []) {
       const edge = this.getEdge(edgeId);
-      if (!edge?.active || !Number.isFinite(edge.weight) || edge.weight <= 0) continue;
+      if (!isEdgeTraversable(this, edge, id)) continue;
       const neighborId = edge.source === id ? edge.target : edge.source;
       const neighbor = this.getNode(neighborId);
-      if (neighbor?.capacity > 0 && neighbor.status === "active")
-        neighbors.push({ node: neighbor, edge });
+      neighbors.push({ node: neighbor, edge });
     }
     return neighbors;
   }
@@ -187,6 +186,62 @@ export class WeightedGraph {
   static baseline() {
     return new WeightedGraph({ nodes: BASE_NODES, edges: BASE_EDGES });
   }
+
+  static fromJSON(json) {
+    return new WeightedGraph(json);
+  }
+}
+
+export function nodeIsActive(node) {
+  return Boolean(node && node.capacity > 0 && node.status === "active");
+}
+
+export function isEdgeTraversable(graph, edge, fromId) {
+  if (!edge?.active || !Number.isFinite(edge.weight) || edge.weight <= 0) return false;
+  const fromNode = graph.getNode(fromId ?? edge.source);
+  const toId = fromId ? (edge.source === fromId ? edge.target : edge.source) : edge.target;
+  const toNode = graph.getNode(toId);
+  if (!nodeIsActive(fromNode) || !nodeIsActive(toNode)) return false;
+  return Number.isFinite(traversalCost(edge, fromNode, toNode));
+}
+
+export function isEdgeVisuallyTraversable(graph, edge) {
+  if (!edge) return false;
+  const source = graph.getNode(edge.source);
+  const target = graph.getNode(edge.target);
+  if (!nodeIsActive(source) || !nodeIsActive(target)) return false;
+  return edge.active && edge.weight > 0;
+}
+
+export function edgesBetween(graph, from, to) {
+  const matches = [];
+  for (const edgeId of graph.adjacency.get(from) ?? []) {
+    const edge = graph.getEdge(edgeId);
+    if (!edge) continue;
+    if (
+      (edge.source === from && edge.target === to) ||
+      (edge.source === to && edge.target === from)
+    ) {
+      matches.push(edge);
+    }
+  }
+  return matches;
+}
+
+export function lowestCostEdgeBetween(graph, from, to) {
+  const fromNode = graph.getNode(from);
+  const toNode = graph.getNode(to);
+  let best = null;
+  let bestCost = Infinity;
+  for (const edge of edgesBetween(graph, from, to)) {
+    if (!isEdgeTraversable(graph, edge, from)) continue;
+    const step = traversalCost(edge, fromNode, toNode);
+    if (step < bestCost) {
+      bestCost = step;
+      best = edge;
+    }
+  }
+  return best;
 }
 
 export class MinPriorityQueue {
@@ -244,20 +299,27 @@ export function breadthFirstSearch(graph, source, target) {
   let head = 0;
   const visited = new Set([source]);
   const parent = new Map();
+  const parentEdge = new Map();
   while (head < queue.length) {
     const current = queue[head++];
     if (current === target) break;
-    for (const { node } of graph.getNeighbors(current)) {
+    for (const { node, edge } of graph.getNeighbors(current)) {
       if (visited.has(node.id)) continue;
       visited.add(node.id);
       parent.set(node.id, current);
+      parentEdge.set(node.id, edge.id);
       queue.push(node.id);
     }
   }
-  if (!visited.has(target)) return { reachable: false, path: [], error: null };
+  if (!visited.has(target)) return { reachable: false, path: [], edgeIds: [], error: null };
   const path = [target];
-  while (path[0] !== source) path.unshift(parent.get(path[0]));
-  return { reachable: true, path, edgeCount: path.length - 1, error: null };
+  const edgeIds = [];
+  while (path[0] !== source) {
+    const step = path[0];
+    edgeIds.unshift(parentEdge.get(step));
+    path.unshift(parent.get(step));
+  }
+  return { reachable: true, path, edgeIds, edgeCount: path.length - 1, error: null };
 }
 
 export function depthFirstPaths(graph, source, target, maxPaths = 12) {
@@ -313,6 +375,7 @@ export function dijkstra(graph, source, target) {
     };
   const distances = new Map([...graph.nodes.keys()].map((id) => [id, Infinity]));
   const parent = new Map();
+  const parentEdge = new Map();
   const queue = new MinPriorityQueue();
   distances.set(source, 0);
   queue.push(source, 0);
@@ -330,35 +393,62 @@ export function dijkstra(graph, source, target) {
       if (candidate < distances.get(node.id)) {
         distances.set(node.id, candidate);
         parent.set(node.id, id);
+        parentEdge.set(node.id, edge.id);
         queue.push(node.id, candidate);
       }
     }
   }
   const cost = distances.get(target);
-  if (!Number.isFinite(cost)) return { reachable: false, path: [], cost: Infinity, error: null };
+  if (!Number.isFinite(cost))
+    return { reachable: false, path: [], cost: Infinity, edgeIds: [], error: null };
   const path = [target];
+  const edgeIds = [];
   while (path[0] !== source) {
-    const previous = parent.get(path[0]);
-    if (!previous) return { reachable: false, path: [], cost: Infinity, error: null };
+    const nodeId = path[0];
+    const previous = parent.get(nodeId);
+    const traversed = parentEdge.get(nodeId);
+    if (!previous || !traversed)
+      return { reachable: false, path: [], cost: Infinity, edgeIds: [], error: null };
+    edgeIds.unshift(traversed);
     path.unshift(previous);
   }
-  return { reachable: true, path, cost, edgeIds: pathToEdgeIds(graph, path), error: null };
+  return { reachable: true, path, cost, edgeIds, error: null };
 }
 
 export function pathToEdgeIds(graph, path) {
   const ids = [];
   for (let index = 0; index < path.length - 1; index += 1) {
-    const edgeId = [...(graph.adjacency.get(path[index]) ?? [])].find((id) => {
-      const edge = graph.getEdge(id);
-      return (
-        edge?.active &&
-        edge.weight > 0 &&
-        (edge.source === path[index + 1] || edge.target === path[index + 1])
-      );
-    });
-    if (edgeId) ids.push(edgeId);
+    const edge = lowestCostEdgeBetween(graph, path[index], path[index + 1]);
+    if (!edge) return [];
+    ids.push(edge.id);
   }
   return ids;
+}
+
+export function validateGraphIntegrity(graph) {
+  const errors = [];
+  const structural = graph.validate();
+  if (!structural.valid) errors.push(...structural.errors);
+  for (const edge of graph.edges.values()) {
+    const source = graph.getNode(edge.source);
+    const target = graph.getNode(edge.target);
+    const traversable =
+      isEdgeTraversable(graph, edge, edge.source) || isEdgeTraversable(graph, edge, edge.target);
+    const endpointsActive = nodeIsActive(source) && nodeIsActive(target);
+    if (endpointsActive && edge.active && edge.weight > 0 && !traversable) {
+      errors.push(`Edge ${edge.id} is marked active but cannot be traversed.`);
+    }
+    if ((!nodeIsActive(source) || !nodeIsActive(target)) && traversable) {
+      errors.push(`Edge ${edge.id} is traversable while an endpoint is unavailable.`);
+    }
+    if (
+      !graph.adjacency.get(edge.source)?.has(edge.id) ||
+      !graph.adjacency.get(edge.target)?.has(edge.id)
+    ) {
+      errors.push(`Edge ${edge.id} is missing from an adjacency list.`);
+    }
+  }
+  return { valid: errors.length === 0, errors };
 }
 
 export const SIMPLE_PATH_LIMIT = 200;
@@ -400,12 +490,8 @@ export function analyzeConnectivity(graph, source, target, baselineCost) {
   const activeNodes = [...graph.nodes.values()].filter(
     (node) => node.capacity > 0 && node.status === "active",
   );
-  const activeEdges = [...graph.edges.values()].filter(
-    (edge) =>
-      edge.active &&
-      edge.weight > 0 &&
-      graph.getNode(edge.source)?.capacity > 0 &&
-      graph.getNode(edge.target)?.capacity > 0,
+  const activeEdges = [...graph.edges.values()].filter((edge) =>
+    isEdgeVisuallyTraversable(graph, edge),
   );
   const components = connectedComponents(graph);
   const { bridges, articulationPoints } = findBridgesAndArticulationPoints(graph);
@@ -531,35 +617,83 @@ function validateSeverity(severity) {
     throw new Error("Damage severity must be greater than 0% and at most 100%.");
 }
 
-export function adaptationStep(graph, source, target, learningRate, decayRate, iteration) {
+export function plasticityWeightUpdate(weight, activity, learningRate, decayRate) {
+  const w = weight ?? 0;
+  const eta = learningRate;
+  const lambda = decayRate;
+  const a = activity ? 1 : 0;
+  return Math.max(0, Math.min(1, w + eta * a * (1 - w) - lambda * w));
+}
+
+export function adaptationStep(
+  graph,
+  source,
+  target,
+  learningRate,
+  decayRate,
+  iteration,
+  options = {},
+) {
   if (!Number.isFinite(learningRate) || learningRate < 0 || learningRate > 1)
     throw new Error("Learning rate must be between 0 and 1.");
   if (!Number.isFinite(decayRate) || decayRate < 0 || decayRate > 1)
     throw new Error("Decay rate must be between 0 and 1.");
+  const convergenceEpsilon = options.convergenceEpsilon ?? 1e-6;
+  const previousEdgeIds = options.previousEdgeIds ?? null;
   const route = dijkstra(graph, source, target);
   if (!route.reachable)
     return {
       reachable: false,
       path: [],
+      edgeIds: [],
       changes: [],
       error: route.error ?? "Target is unreachable; no pathway was adapted.",
+      iteration,
+      pathChanged: false,
+      converged: false,
+      saturated: false,
+      cost: Infinity,
     };
   const selectedEdges = new Set(route.edgeIds);
   const changes = [];
   for (const edge of graph.edges.values()) {
-    if (!edge.active || edge.weight <= 0) continue;
+    if (!isEdgeTraversable(graph, edge, edge.source)) continue;
     const activity = selectedEdges.has(edge.id) ? 1 : 0;
     const previous = edge.weight;
-    edge.weight = Math.max(
-      0,
-      Math.min(1, previous + learningRate * activity * (1 - previous) - decayRate * previous),
-    );
+    const nextWeight = plasticityWeightUpdate(previous, activity, learningRate, decayRate);
+    edge.weight = nextWeight;
     if (edge.weight === 0) edge.active = false;
     if (activity > 0) edge.usageCount += 1;
     if (Math.abs(edge.weight - previous) > Number.EPSILON)
       changes.push({ edgeId: edge.id, previous, weight: edge.weight, activity });
   }
-  return { reachable: true, path: route.path, edgeIds: route.edgeIds, changes, iteration };
+  const pathChanged =
+    Boolean(previousEdgeIds) && JSON.stringify(previousEdgeIds) !== JSON.stringify(route.edgeIds);
+  const pathEdgeChanges = changes.filter((change) => selectedEdges.has(change.edgeId));
+  const maxPathDelta = pathEdgeChanges.reduce(
+    (max, change) => Math.max(max, Math.abs(change.weight - change.previous)),
+    0,
+  );
+  const converged =
+    route.reachable && pathEdgeChanges.length > 0 && maxPathDelta < convergenceEpsilon;
+  const saturated = route.edgeIds.every((id) => {
+    const edge = graph.getEdge(id);
+    return (
+      edge && isEdgeTraversable(graph, edge, edge.source) && edge.weight >= 1 - convergenceEpsilon
+    );
+  });
+  const refreshed = dijkstra(graph, source, target);
+  return {
+    reachable: true,
+    path: route.path,
+    edgeIds: route.edgeIds,
+    changes,
+    iteration,
+    pathChanged,
+    converged,
+    saturated,
+    cost: refreshed.cost,
+  };
 }
 
 export const BASELINE_COST = 1 / 0.9 + 1 / 0.85 + 1 / 0.8 + 1 / 0.9;

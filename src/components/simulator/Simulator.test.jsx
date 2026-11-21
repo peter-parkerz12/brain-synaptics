@@ -1,26 +1,39 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Simulator } from "./Simulator.jsx";
 import { WeightedGraph, applyNodeDamage, dijkstra } from "@/simulation/graph.js";
 
-vi.mock("cytoscape", () => ({
-  default: () => ({
-    on() {
-      return this;
-    },
-    destroy() {},
-    batch(callback) {
-      callback();
-    },
-    getElementById() {
-      return { empty: () => true, classes() {}, data() {} };
-    },
-    add() {},
-    resize() {},
-    fit() {},
-    scratch() {},
-  }),
-}));
+vi.mock("cytoscape", () => {
+  const emptyCollection = { forEach() {}, length: 0 };
+  return {
+    default: () => ({
+      on() {
+        return this;
+      },
+      destroy() {},
+      batch(callback) {
+        callback();
+      },
+      elements() {
+        return { stop() {}, forEach() {}, length: 0 };
+      },
+      nodes: () => emptyCollection,
+      edges: () => emptyCollection,
+      getElementById() {
+        return {
+          empty: () => true,
+          classes() {},
+          data() {},
+          position() {},
+        };
+      },
+      add() {},
+      resize() {},
+      fit() {},
+      scratch() {},
+    }),
+  };
+});
 
 vi.mock("chart.js/auto", () => ({
   default: class Chart {
@@ -28,12 +41,20 @@ vi.mock("chart.js/auto", () => ({
   },
 }));
 
+function runTraumaAnalyseAdapt() {
+  fireEvent.click(screen.getByRole("button", { name: /SIMULATE TRAUMA/i }));
+  fireEvent.click(screen.getByRole("button", { name: /ANALYSE NETWORK/i }));
+}
+
 describe("simulator controls", () => {
   beforeEach(() => {
     render(<Simulator />);
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
 
   it("compares the selected endpoints with their own baseline", () => {
     fireEvent.change(screen.getByLabelText("Target node"), { target: { value: "M" } });
@@ -46,16 +67,18 @@ describe("simulator controls", () => {
   });
 
   it("styles the primary and warning actions", () => {
-    expect(screen.getByRole("button", { name: /RUN ALL/i })).toHaveClass("bg-primary");
+    expect(screen.getByRole("button", { name: /SIMULATE NEUROPLASTICITY/i })).toHaveClass(
+      "bg-primary",
+    );
     expect(screen.getByRole("button", { name: /SIMULATE TRAUMA/i })).toHaveClass("bg-warning");
   });
 
   it("rejects 0% damage without changing the inspected node", () => {
     fireEvent.change(screen.getByLabelText("SEVERITY"), { target: { value: "0" } });
-    fireEvent.click(screen.getByRole("button", { name: /APPLY DAMAGE/i }));
+    fireEvent.click(screen.getByRole("button", { name: /DAMAGE SELECTED/i }));
     expect(screen.getByRole("alert")).toHaveTextContent(/greater than 0%/i);
     expect(screen.getByText("1.00", { selector: "strong" })).toBeInTheDocument();
-    expect(document.querySelector(".state-chip")).toHaveTextContent("S0 · BASELINE");
+    expect(document.querySelector(".state-chip-technical")).toHaveTextContent("S0 · BASELINE");
   });
 
   it("keeps selection, damage target, and inspector on the same element", () => {
@@ -64,40 +87,73 @@ describe("simulator controls", () => {
     expect(screen.getByLabelText("Select element to damage")).toHaveValue("B");
   });
 
-  it("shows partial node damage in the current path cost and returns to damage after adaptation", () => {
+  it("blocks plasticity until disruption analysis is complete", () => {
+    fireEvent.click(screen.getByRole("button", { name: /SIMULATE TRAUMA/i }));
+    expect(document.querySelector(".state-chip-technical")).toHaveTextContent("S1 · DAMAGED");
+    fireEvent.click(screen.getByRole("button", { name: /SIMULATE NEUROPLASTICITY/i }));
+    expect(document.querySelector(".state-chip-technical")).toHaveTextContent("S3 · ADAPTING");
+  });
+
+  it("shows partial node damage cost and withholds plasticity without a reroute", () => {
     fireEvent.change(screen.getByLabelText("Select element to damage"), { target: { value: "C" } });
-    fireEvent.click(screen.getByRole("button", { name: /APPLY DAMAGE/i }));
+    fireEvent.click(screen.getByRole("button", { name: /DAMAGE SELECTED/i }));
     const expected = (() => {
       const graph = WeightedGraph.baseline();
       applyNodeDamage(graph, "C", 40);
       return dijkstra(graph, "A", "F").cost.toFixed(4);
     })();
     expect(screen.getByText(/CURRENT COST/).parentElement).toHaveTextContent(expected);
-    expect(document.querySelector(".state-chip")).toHaveTextContent("S1 · AFTER DAMAGE");
-    fireEvent.click(screen.getByRole("button", { name: "+ 1" }));
-    expect(document.querySelector(".state-chip")).toHaveTextContent("S3 · AFTER ADAPTATION");
-    fireEvent.click(screen.getByRole("button", { name: /APPLY DAMAGE/i }));
-    expect(document.querySelector(".state-chip")).toHaveTextContent("S1 · AFTER DAMAGE");
+    fireEvent.click(screen.getByRole("button", { name: /ANALYSE NETWORK/i }));
+    fireEvent.click(screen.getByRole("button", { name: /SIMULATE NEUROPLASTICITY/i }));
+    expect(document.querySelector(".state-chip-technical")).toHaveTextContent("S2 · ANALYSED");
   });
 
-  it("does not mutate edge usage when Dijkstra is used as a query", () => {
-    fireEvent.click(screen.getByRole("button", { name: /SIMULATE TRAUMA/i }));
-    fireEvent.click(screen.getByRole("button", { name: "DIJKSTRA" }));
-    fireEvent.change(screen.getByLabelText("Select element to damage"), {
-      target: { value: "E-F" },
+  it("runs plasticity ticks after simulate neuroplasticity", async () => {
+    vi.useFakeTimers();
+    runTraumaAnalyseAdapt();
+    fireEvent.click(screen.getByRole("button", { name: /SIMULATE NEUROPLASTICITY/i }));
+    expect(document.querySelector(".state-chip-technical")).toHaveTextContent("S3 · ADAPTING");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(290);
     });
-    expect(screen.getByText("0 · ACTIVE")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: /Adaptation progress/i })).toHaveAttribute(
+      "aria-valuenow",
+      "1",
+    );
+  });
+
+  it("advances to adapting and returns to damaged after further damage", async () => {
+    vi.useFakeTimers();
+    runTraumaAnalyseAdapt();
+    fireEvent.click(screen.getByRole("button", { name: /SIMULATE NEUROPLASTICITY/i }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(290);
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Pause plasticity simulation/i }));
+    fireEvent.change(screen.getByLabelText("Select element to damage"), { target: { value: "E-F" } });
+    fireEvent.click(screen.getByRole("button", { name: /DAMAGE SELECTED/i }));
+    expect(document.querySelector(".state-chip-technical")).toHaveTextContent("S1 · DAMAGED");
+  });
+
+  it("surveys routing after trauma preset without skipping the analysis step", () => {
+    fireEvent.click(screen.getByRole("button", { name: /SIMULATE TRAUMA/i }));
+    expect(document.querySelector(".state-chip-technical")).toHaveTextContent("S1 · DAMAGED");
+    expect(screen.getByRole("button", { name: /ANALYSE NETWORK/i })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /ANALYSE NETWORK/i }));
     expect(screen.getByRole("columnheader", { name: "A-D" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "D-E" })).toBeInTheDocument();
-    expect(screen.queryByRole("columnheader", { name: "B-C" })).not.toBeInTheDocument();
   });
 
-  it("records distinct trauma events", () => {
+  it("records a single trauma preset event before analysis", () => {
     fireEvent.click(screen.getByRole("button", { name: /SIMULATE TRAUMA/i }));
-    const titles = screen.getAllByText(/PRESET · B-C DISRUPTED|BFS \+ DIJKSTRA · EXECUTED/);
-    expect(titles).toHaveLength(2);
-    const rows = document.querySelectorAll(".event-row");
-    const ids = [...rows].map((row) => row.getAttribute("data-event-id"));
-    expect(new Set(ids).size).toBe(ids.length);
+    const titles = screen.getAllByText(/PRESET · B-C DISRUPTED/);
+    expect(titles).toHaveLength(1);
+  });
+
+  it("locks network size after damage until reset", () => {
+    fireEvent.click(screen.getByRole("button", { name: /SIMULATE TRAUMA/i }));
+    expect(screen.getByLabelText("NETWORK SIZE")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /Reset simulation/i }));
+    expect(screen.getByLabelText("NETWORK SIZE")).not.toBeDisabled();
   });
 });
