@@ -22,8 +22,10 @@ import {
   adaptationStep,
   applyEdgeDamage,
   applyNodeDamage,
+  dijkstra,
   isEdgeVisuallyTraversable,
   networkHasDamage,
+  simulatedPerformance,
   restoreEdge,
   restoreNode,
   validateGraphIntegrity,
@@ -99,14 +101,32 @@ export function Simulator() {
   const [pathPreview, setPathPreview] = useState(null);
   const [analysisReport, setAnalysisReport] = useState(null);
   const [workflowStep, setWorkflowStep] = useState(WORKFLOW.baseline);
+  const [plasticityDamageFreeRouting, setPlasticityDamageFreeRouting] = useState(false);
   const referenceGraph = useMemo(
     () => WeightedGraph.fromJSON(referenceGraphJson),
     [referenceGraphJson],
   );
-  const simulationView = useMemo(
-    () => buildSimulationView(graph, referenceGraph, source, target),
-    [graph, referenceGraph, source, target],
-  );
+  const simulationView = useMemo(() => {
+    const view = buildSimulationView(graph, referenceGraph, source, target);
+    if (plasticityDamageFreeRouting) {
+      const route = dijkstra(graph, source, target, { damageFreeOnly: true });
+      if (route.reachable) {
+        view.paths.current.path = route.path;
+        view.paths.current.edgeIds = route.edgeIds;
+        view.highlight.path = route.path;
+        view.highlight.edgeIds = route.edgeIds;
+        view.metrics.current = {
+          ...view.metrics.current,
+          reachable: true,
+          path: route.path,
+          cost: route.cost,
+          edgeIds: route.edgeIds,
+        };
+        view.metrics.performance = simulatedPerformance(view.baselineRoute.cost, route);
+      }
+    }
+    return view;
+  }, [graph, plasticityDamageFreeRouting, referenceGraph, source, target]);
   const metrics = simulationView.metrics;
   const baselineRoute = simulationView.baselineRoute;
   const [history, setHistory] = useState(() =>
@@ -182,6 +202,7 @@ export function Simulator() {
           workflowStep,
           analysisReport,
           adaptationCheckpoint,
+          plasticityDamageFreeRouting,
           source,
           target,
         },
@@ -189,6 +210,7 @@ export function Simulator() {
     );
   }, [
     adaptationCheckpoint,
+    plasticityDamageFreeRouting,
     analysisReport,
     events,
     graph,
@@ -216,6 +238,7 @@ export function Simulator() {
     setPathPreview(null);
     setAnalysisReport(null);
     setAdaptationCheckpoint(null);
+    setPlasticityDamageFreeRouting(false);
     lastPlasticityRouteRef.current = null;
     setHistory(initialHistory(pristine, pristine, DEFAULT_SOURCE_ID, DEFAULT_TARGET_ID));
     setUndoStack([]);
@@ -409,6 +432,7 @@ export function Simulator() {
     const nextGraph = graph.clone();
     const step = adaptationStep(nextGraph, source, target, learningRate, decayRate, iteration + 1, {
       previousEdgeIds: lastPlasticityRouteRef.current,
+      damageFreeRouting: plasticityDamageFreeRouting,
     });
     if (step.pathChanged) {
       pushEvent({
@@ -458,7 +482,18 @@ export function Simulator() {
         tone: stop.reason === PLASTICITY_STOP_REASON.unreachable ? "damage" : "adapted",
       });
     }
-  }, [decayRate, graph, isPaused, iteration, learningRate, pushEvent, record, source, target]);
+  }, [
+    decayRate,
+    graph,
+    isPaused,
+    iteration,
+    learningRate,
+    plasticityDamageFreeRouting,
+    pushEvent,
+    record,
+    source,
+    target,
+  ]);
 
   const commitAnalysis = useCallback(
     (report, { recordEvent = true } = {}) => {
@@ -494,6 +529,7 @@ export function Simulator() {
       });
       if (!prep.ready) {
         setNotice(prep.message);
+        setPlasticityDamageFreeRouting(false);
         return;
       }
       saveUndo();
@@ -501,7 +537,9 @@ export function Simulator() {
         graphJson: graph.toJSON(),
         analysisReport: report,
         iteration: 0,
+        damageFreeRouting: Boolean(prep.damageFreeRouting),
       });
+      setPlasticityDamageFreeRouting(Boolean(prep.damageFreeRouting));
       lastPlasticityRouteRef.current = prep.route.edgeIds;
       setPathPreview(null);
       setIteration(0);
@@ -510,7 +548,7 @@ export function Simulator() {
       setIsRunning(true);
       setIsPaused(false);
       const forcedNote = prep.forced
-        ? " Run-anyway override: uses the live minimum-cost Dijkstra path without the alternative-pathway gate."
+        ? " Run-anyway: damage-free minimum-cost Dijkstra path (alternative-path gate bypassed)."
         : "";
       pushEvent({
         title: "PLASTICITY · SIMULATION STARTED",
@@ -559,6 +597,7 @@ export function Simulator() {
     setWorkflowStep(WORKFLOW.analysed);
     lastPlasticityRouteRef.current = null;
     setAdaptationCheckpoint(null);
+    setPlasticityDamageFreeRouting(false);
     setNotice("");
     pushEvent({
       title: "PLASTICITY · RESET",
@@ -590,6 +629,7 @@ export function Simulator() {
     setWorkflowStep(previous.workflowStep ?? WORKFLOW.baseline);
     setAnalysisReport(previous.analysisReport ?? null);
     setAdaptationCheckpoint(previous.adaptationCheckpoint ?? null);
+    setPlasticityDamageFreeRouting(previous.plasticityDamageFreeRouting ?? false);
     lastPlasticityRouteRef.current = null;
     setUndoStack((stack) => stack.slice(0, -1));
     setNotice("");
@@ -647,14 +687,7 @@ export function Simulator() {
   const networkConfigAllowed = canConfigureNetwork(workflowStep, busy);
   const evaluateAllowed = canEvaluate(workflowStep, busy);
   const showRunAnyway =
-    !busy &&
-    !isRunning &&
-    damaged &&
-    (notice === NO_ALTERNATIVE_PLASTICITY_MESSAGE ||
-      (workflowStep === WORKFLOW.analysed &&
-        analysisReport &&
-        !analysisReport.disconnected &&
-        !analysisReport.alternativeOk));
+    !busy && !isRunning && notice === NO_ALTERNATIVE_PLASTICITY_MESSAGE;
   const guidance = getWorkflowGuidance(workflowStep, {
     reachable: metrics.reachable,
     alternativeOk: analysisReport?.alternativeOk ?? false,

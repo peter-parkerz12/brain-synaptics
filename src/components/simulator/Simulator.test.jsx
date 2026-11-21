@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Simulator } from "./Simulator.jsx";
+import { NO_ALTERNATIVE_PLASTICITY_MESSAGE } from "@/simulation/plasticity-simulation.js";
 import { WeightedGraph, applyNodeDamage, dijkstra } from "@/simulation/graph.js";
 
 vi.mock("cytoscape", () => {
@@ -155,5 +156,25 @@ describe("simulator controls", () => {
     expect(screen.getByLabelText("NETWORK SIZE")).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: /Reset simulation/i }));
     expect(screen.getByLabelText("NETWORK SIZE")).not.toBeDisabled();
+  });
+
+  it("hides RUN ANYWAY when a qualifying alternative exists even after analysis", () => {
+    fireEvent.click(screen.getByRole("button", { name: /SIMULATE TRAUMA/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ANALYSE NETWORK/i }));
+    expect(
+      screen.queryByRole("button", { name: /^RUN ANYWAY$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows RUN ANYWAY only after plasticity prep reports no qualifying alternative", () => {
+    fireEvent.change(screen.getByLabelText("Select element to damage"), { target: { value: "C" } });
+    fireEvent.click(screen.getByRole("button", { name: /DAMAGE SELECTED/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ANALYSE NETWORK/i }));
+    expect(
+      screen.queryByRole("button", { name: /^RUN ANYWAY$/i }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /SIMULATE NEUROPLASTICITY/i }));
+    expect(screen.getByRole("alert")).toHaveTextContent(NO_ALTERNATIVE_PLASTICITY_MESSAGE);
+    expect(screen.getAllByRole("button", { name: /^RUN ANYWAY$/i }).length).toBeGreaterThan(0);
   });
 });

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { WeightedGraph, adaptationStep, applyEdgeDamage, plasticityWeightUpdate } from "./graph.js";
+import {
+  WeightedGraph,
+  adaptationStep,
+  applyEdgeDamage,
+  dijkstra,
+  plasticityWeightUpdate,
+} from "./graph.js";
 import {
   plasticityStopReason,
   preparePlasticityRun,
@@ -22,7 +28,9 @@ describe("plasticity simulation", () => {
     const forced = preparePlasticityRun(graph, reference, "A", "F", { forceMinimumCostPath: true });
     expect(forced.ready).toBe(true);
     expect(forced.forced).toBe(true);
-    expect(forced.route.path).toEqual(["A", "B", "C", "E", "F"]);
+    expect(forced.route.path).not.toContain("B-C");
+    expect(forced.route.edgeIds).not.toContain("B-C");
+    expect(forced.route.path).toEqual(dijkstra(graph, "A", "F", { damageFreeOnly: true }).path);
   });
 
   it("prepares a run after B-C disruption with a live Dijkstra path", () => {

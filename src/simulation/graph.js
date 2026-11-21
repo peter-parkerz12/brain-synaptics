@@ -350,7 +350,26 @@ export function depthFirstPaths(graph, source, target, maxPaths = 12) {
   return paths;
 }
 
-export function dijkstra(graph, source, target) {
+export function nodeHasAppliedDamage(node) {
+  if (!node) return true;
+  return node.capacity < 1 || node.status !== "active";
+}
+
+export function edgeHasAppliedDamage(edge) {
+  if (!edge) return true;
+  return edge.damageSeverity > 0 || !edge.active || edge.weight <= 0;
+}
+
+export function isTraversalForbiddenForDamageFreeRun(graph, edge, fromId) {
+  if (edgeHasAppliedDamage(edge)) return true;
+  const fromNode = graph.getNode(fromId ?? edge.source);
+  const toId = fromId ? (edge.source === fromId ? edge.target : edge.source) : edge.target;
+  const toNode = graph.getNode(toId);
+  return nodeHasAppliedDamage(fromNode) || nodeHasAppliedDamage(toNode);
+}
+
+export function dijkstra(graph, source, target, options = {}) {
+  const damageFreeOnly = Boolean(options.damageFreeOnly);
   if (!graph.getNode(source))
     return {
       reachable: false,
@@ -373,6 +392,23 @@ export function dijkstra(graph, source, target) {
       cost: Infinity,
       error: `Source node ${source} is unavailable.`,
     };
+  if (damageFreeOnly && nodeHasAppliedDamage(sourceNode))
+    return {
+      reachable: false,
+      path: [],
+      cost: Infinity,
+      edgeIds: [],
+      error: `Source node ${source} is damaged and cannot start a damage-free route.`,
+    };
+  const targetNode = graph.getNode(target);
+  if (damageFreeOnly && nodeHasAppliedDamage(targetNode))
+    return {
+      reachable: false,
+      path: [],
+      cost: Infinity,
+      edgeIds: [],
+      error: `Target node ${target} is damaged and cannot end a damage-free route.`,
+    };
   const distances = new Map([...graph.nodes.keys()].map((id) => [id, Infinity]));
   const parent = new Map();
   const parentEdge = new Map();
@@ -387,6 +423,8 @@ export function dijkstra(graph, source, target) {
     if (id === target) break;
     const fromNode = graph.getNode(id);
     for (const { node, edge } of graph.getNeighbors(id)) {
+      if (damageFreeOnly && isTraversalForbiddenForDamageFreeRun(graph, edge, id)) continue;
+      if (damageFreeOnly && nodeHasAppliedDamage(node)) continue;
       const step = traversalCost(edge, fromNode, node);
       if (!Number.isFinite(step)) continue;
       const candidate = priority + step;
@@ -640,7 +678,8 @@ export function adaptationStep(
     throw new Error("Decay rate must be between 0 and 1.");
   const convergenceEpsilon = options.convergenceEpsilon ?? 1e-6;
   const previousEdgeIds = options.previousEdgeIds ?? null;
-  const route = dijkstra(graph, source, target);
+  const damageFreeRouting = Boolean(options.damageFreeRouting);
+  const route = dijkstra(graph, source, target, { damageFreeOnly: damageFreeRouting });
   if (!route.reachable)
     return {
       reachable: false,
@@ -657,6 +696,12 @@ export function adaptationStep(
   const selectedEdges = new Set(route.edgeIds);
   const changes = [];
   for (const edge of graph.edges.values()) {
+    if (damageFreeRouting) {
+      if (edgeHasAppliedDamage(edge)) continue;
+      const sourceNode = graph.getNode(edge.source);
+      const targetNode = graph.getNode(edge.target);
+      if (nodeHasAppliedDamage(sourceNode) || nodeHasAppliedDamage(targetNode)) continue;
+    }
     if (!isEdgeTraversable(graph, edge, edge.source)) continue;
     const activity = selectedEdges.has(edge.id) ? 1 : 0;
     const previous = edge.weight;
@@ -682,7 +727,7 @@ export function adaptationStep(
       edge && isEdgeTraversable(graph, edge, edge.source) && edge.weight >= 1 - convergenceEpsilon
     );
   });
-  const refreshed = dijkstra(graph, source, target);
+  const refreshed = dijkstra(graph, source, target, { damageFreeOnly: damageFreeRouting });
   return {
     reachable: true,
     path: route.path,
