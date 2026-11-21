@@ -12,6 +12,19 @@ describe("plasticity simulation", () => {
     expect(plasticityWeightUpdate(0.3, 0, 0.1, 0.1)).toBeCloseTo(0.27, 10);
   });
 
+  it("can force plasticity on the current minimum-cost path without a qualifying alternative", () => {
+    const reference = WeightedGraph.baseline();
+    const graph = reference.clone();
+    applyEdgeDamage(graph, "B-C", 40);
+    const blocked = preparePlasticityRun(graph, reference, "A", "F");
+    expect(blocked.ready).toBe(false);
+    expect(blocked.reason).toBe(PLASTICITY_STOP_REASON.noAlternative);
+    const forced = preparePlasticityRun(graph, reference, "A", "F", { forceMinimumCostPath: true });
+    expect(forced.ready).toBe(true);
+    expect(forced.forced).toBe(true);
+    expect(forced.route.path).toEqual(["A", "B", "C", "E", "F"]);
+  });
+
   it("prepares a run after B-C disruption with a live Dijkstra path", () => {
     const reference = WeightedGraph.baseline();
     const graph = reference.clone();

@@ -53,6 +53,7 @@ import {
   PLASTICITY_STOP_REASON,
   formatPathwaySwitch,
   plasticityStopReason,
+  NO_ALTERNATIVE_PLASTICITY_MESSAGE,
   preparePlasticityRun,
 } from "@/simulation/plasticity-simulation.js";
 import {
@@ -478,7 +479,7 @@ export function Simulator() {
     [graph, iteration, record],
   );
 
-  const simulateNeuroplasticity = () => {
+  const beginPlasticitySimulation = (forceMinimumCostPath = false) => {
     if (isRunning) return;
     try {
       validateGraphIntegrity(graph);
@@ -488,7 +489,9 @@ export function Simulator() {
         report = runDisruptionAnalysis(graph, referenceGraph, source, target);
         commitAnalysis(report);
       }
-      const prep = preparePlasticityRun(graph, referenceGraph, source, target);
+      const prep = preparePlasticityRun(graph, referenceGraph, source, target, {
+        forceMinimumCostPath,
+      });
       if (!prep.ready) {
         setNotice(prep.message);
         return;
@@ -506,9 +509,12 @@ export function Simulator() {
       setWorkflowStep(WORKFLOW.adapting);
       setIsRunning(true);
       setIsPaused(false);
+      const forcedNote = prep.forced
+        ? " Run-anyway override: uses the live minimum-cost Dijkstra path without the alternative-pathway gate."
+        : "";
       pushEvent({
         title: "PLASTICITY · SIMULATION STARTED",
-        detail: `${prep.message} Policy: minimum-cost Dijkstra pathway each iteration.`,
+        detail: `${prep.message} Policy: minimum-cost Dijkstra pathway each iteration.${forcedNote}`,
         tone: "adapted",
       });
     } catch (error) {
@@ -516,6 +522,9 @@ export function Simulator() {
       setIsRunning(false);
     }
   };
+
+  const simulateNeuroplasticity = () => beginPlasticitySimulation(false);
+  const simulateNeuroplasticityAnyway = () => beginPlasticitySimulation(true);
 
   const togglePlasticityPause = () => {
     if (!isRunning) return;
@@ -637,6 +646,15 @@ export function Simulator() {
   const restoreAllowed = canRestore(workflowStep, busy);
   const networkConfigAllowed = canConfigureNetwork(workflowStep, busy);
   const evaluateAllowed = canEvaluate(workflowStep, busy);
+  const showRunAnyway =
+    !busy &&
+    !isRunning &&
+    damaged &&
+    (notice === NO_ALTERNATIVE_PLASTICITY_MESSAGE ||
+      (workflowStep === WORKFLOW.analysed &&
+        analysisReport &&
+        !analysisReport.disconnected &&
+        !analysisReport.alternativeOk));
   const guidance = getWorkflowGuidance(workflowStep, {
     reachable: metrics.reachable,
     alternativeOk: analysisReport?.alternativeOk ?? false,
@@ -1005,11 +1023,25 @@ export function Simulator() {
               </p>
             )}
             {!adaptAllowed && workflowStep === WORKFLOW.analysed && (
-              <p className="section-help damage-tone">
-                {analysisReport?.disconnected
-                  ? "Adaptation blocked: target unreachable."
-                  : "Adaptation blocked: no qualifying alternative pathway under the current rules."}
-              </p>
+              <div>
+                <p className="section-help damage-tone">
+                  {analysisReport?.disconnected
+                    ? "Adaptation blocked: target unreachable."
+                    : analysisReport?.alternativeOk
+                      ? "Adaptation blocked under the current workflow state."
+                      : NO_ALTERNATIVE_PLASTICITY_MESSAGE}
+                </p>
+                {showRunAnyway && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="action-button"
+                    onClick={simulateNeuroplasticityAnyway}
+                  >
+                    RUN ANYWAY
+                  </Button>
+                )}
+              </div>
             )}
             <div className="iteration-label">
               <span>ITERATION</span>
@@ -1134,7 +1166,12 @@ export function Simulator() {
           {notice && (
             <div className="notice" role="alert">
               <CircleHelp size={14} />
-              {notice}
+              <span>{notice}</span>
+              {showRunAnyway && notice === NO_ALTERNATIVE_PLASTICITY_MESSAGE && (
+                <Button size="sm" variant="outline" onClick={simulateNeuroplasticityAnyway}>
+                  RUN ANYWAY
+                </Button>
+              )}
             </div>
           )}
           <section className="inspection-strip">

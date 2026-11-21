@@ -1,6 +1,9 @@
 import { dijkstra } from "./graph.js";
 import { hasValidAlternativePath, runDisruptionAnalysis } from "./simulation-workflow.js";
 
+export const NO_ALTERNATIVE_PLASTICITY_MESSAGE =
+  "No qualifying alternative minimum-cost pathway for plasticity.";
+
 export const PLASTICITY_STOP_REASON = {
   unreachable: "unreachable",
   noAlternative: "no_alternative",
@@ -52,7 +55,8 @@ export function plasticityStopReason(step, iteration, maxIterations) {
   return { stopped: false, reason: null, message: "" };
 }
 
-export function preparePlasticityRun(graph, referenceGraph, source, target) {
+export function preparePlasticityRun(graph, referenceGraph, source, target, options = {}) {
+  const forceMinimumCostPath = Boolean(options.forceMinimumCostPath);
   const analysis = runDisruptionAnalysis(graph, referenceGraph, source, target);
   if (analysis.disconnected) {
     return {
@@ -62,19 +66,28 @@ export function preparePlasticityRun(graph, referenceGraph, source, target) {
       message: analysis.headline,
     };
   }
-  if (!hasValidAlternativePath(referenceGraph, graph, source, target)) {
+  if (!forceMinimumCostPath && !hasValidAlternativePath(referenceGraph, graph, source, target)) {
     return {
       ready: false,
       analysis,
       reason: PLASTICITY_STOP_REASON.noAlternative,
-      message: "No qualifying alternative minimum-cost pathway for plasticity.",
+      message: NO_ALTERNATIVE_PLASTICITY_MESSAGE,
     };
   }
   const route = dijkstra(graph, source, target);
+  if (!route.reachable) {
+    return {
+      ready: false,
+      analysis,
+      reason: PLASTICITY_STOP_REASON.unreachable,
+      message: route.error ?? analysis.headline,
+    };
+  }
   return {
     ready: true,
     analysis,
     route,
+    forced: forceMinimumCostPath,
     message: `Minimum-cost pathway: ${route.path.join(" → ")} · cost ${route.cost.toFixed(4)}`,
   };
 }
